@@ -9,9 +9,10 @@ import { can } from "@/lib/permissions";
 import { getCollabColor } from "@/lib/collab-colors";
 import { YjsSupabaseProvider } from "@/lib/y-supabase-provider";
 import { bindYTextToTextarea } from "@/lib/y-textarea";
-import type { AjaiaDocument, MarkdownDoc } from "@/lib/types";
+import type { AjaiaDocument, MarkdownDoc, TiptapDoc } from "@/lib/types";
 import type { CurrentUser } from "@/lib/session";
 import type { EditorDocument, SaveState } from "../components/editor-types";
+import { tiptapToMarkdown, syncStringToYText } from "@/lib/document-conversion";
 
 // Owns the Yjs-backed Markdown document state, autosave, rename, export, and awareness lifecycle.
 export function useMarkdownDocument(
@@ -25,21 +26,32 @@ export function useMarkdownDocument(
   const [markdownText, setMarkdownText] = useState("");
   const [awareness, setAwareness] = useState<Awareness | null>(null);
   const [activeUserIds, setActiveUserIds] = useState<Set<string>>(new Set([user.id]));
+  const [format, setFormat] = useState<"markdown" | "doc">(() => {
+    const contentObj = initialDocument?.content;
+    if (contentObj && "format" in contentObj && contentObj.format === "markdown") {
+      return "markdown";
+    }
+    return "doc";
+  });
   const ydocRef = useRef<Y.Doc | null>(null);
   const ytextRef = useRef<Y.Text | null>(null);
   const providerRef = useRef<YjsSupabaseProvider | null>(null);
   const unbindTextareaRef = useRef<(() => void) | null>(null);
   const undoManagerRef = useRef<Y.UndoManager | null>(null);
+  const latestTiptapJsonRef = useRef<TiptapDoc | null>(null);
 
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
 
   const initialMarkdown = useMemo(() => {
     const contentObj = initialDocument?.content;
-    return contentObj && "format" in contentObj && contentObj.format === "markdown"
-      ? (contentObj as MarkdownDoc).text
-      : "";
+    if (!contentObj) return "";
+    if ("format" in contentObj && contentObj.format === "markdown") {
+      return (contentObj as MarkdownDoc).text || "";
+    }
+    return tiptapToMarkdown(contentObj);
   }, [initialDocument]);
+
 
   useEffect(() => {
     const id = window.setTimeout(() => setTitleDraft(doc?.title ?? ""), 0);
@@ -65,6 +77,23 @@ export function useMarkdownDocument(
     const updateMarkdownText = () => setMarkdownText(ytext.toString());
     ytext.observe(updateMarkdownText);
 
+    // Sync format using Yjs Map
+    const ymap = ydoc.getMap("metadata");
+    if (ymap.get("format") === undefined) {
+      const initialFormat = initialDocument.content && "format" in initialDocument.content && initialDocument.content.format === "markdown"
+        ? "markdown"
+        : "doc";
+      ymap.set("format", initialFormat);
+    }
+
+    const updateMetadata = () => {
+      const currentFormat = ymap.get("format") as "markdown" | "doc";
+      if (currentFormat) {
+        setFormat((prev) => (prev !== currentFormat ? currentFormat : prev));
+      }
+    };
+    ymap.observe(updateMetadata);
+
     const updateActiveUsers = () => {
       const states = Array.from(provider.awareness.getStates().values()) as { user?: { userId?: string } }[];
       setActiveUserIds(new Set(states.map((state) => state.user?.userId).filter((id): id is string => Boolean(id))));
@@ -74,6 +103,10 @@ export function useMarkdownDocument(
       setAwareness(provider.awareness);
       setMarkdownText(ytext.toString());
       updateActiveUsers();
+      const currentFormat = ymap.get("format") as "markdown" | "doc";
+      if (currentFormat) {
+        setFormat((prev) => (prev !== currentFormat ? currentFormat : prev));
+      }
     }, 0);
 
     return () => {
@@ -81,6 +114,7 @@ export function useMarkdownDocument(
       unbindTextareaRef.current?.();
       unbindTextareaRef.current = null;
       ytext.unobserve(updateMarkdownText);
+      ymap.unobserve(updateMetadata);
       provider.awareness.off("change", updateActiveUsers);
       provider.destroy();
       ydoc.destroy();
@@ -95,9 +129,15 @@ export function useMarkdownDocument(
   useEffect(() => {
     const textarea = textareaRef.current;
     const ytext = ytextRef.current;
+    if (format !== "markdown") {
+      unbindTextareaRef.current?.();
+      unbindTextareaRef.current = null;
+      return;
+    }
     if (!textarea || !ytext || unbindTextareaRef.current) return;
     unbindTextareaRef.current = bindYTextToTextarea(ytext, textarea);
   });
+
 
   const saveContent = useCallback(
     async (silent = false) => {
@@ -106,8 +146,13 @@ export function useMarkdownDocument(
         toast.error("You only have view access");
         return;
       }
-      const text = ytextRef.current?.toString() ?? markdownText;
-      const content = { format: "markdown" as const, text } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
+      let content: AjaiaDocument["content"];
+      if (format === "markdown") {
+        const text = ytextRef.current?.toString() ?? markdownText;
+        content = { format: "markdown", text };
+      } else {
+        content = (latestTiptapJsonRef.current ?? (doc.content && !("format" in doc.content) ? doc.content : { type: "doc", content: [] })) as TiptapDoc;
+      }
       setSaveState("saving");
       try {
         const response = await fetch(`/api/documents/${doc.id}`, {
@@ -124,6 +169,61 @@ export function useMarkdownDocument(
       } catch (error) {
         setSaveState("error");
         if (!silent) toast.error(error instanceof Error ? error.message : "Save failed");
+      }
+    },
+    [doc, role, format, markdownText],
+  );
+
+  const changeFormat = useCallback(
+    async (newFormat: "markdown" | "doc", currentTiptapJson?: TiptapDoc | null) => {
+      if (!doc) return;
+      if (role !== "owner") {
+        toast.error("Only owners can change the document format");
+        return;
+      }
+
+      ydocRef.current?.getMap("metadata").set("format", newFormat);
+      setFormat(newFormat);
+
+      let newContent: AjaiaDocument["content"];
+      if (newFormat === "markdown") {
+        const json = currentTiptapJson ?? latestTiptapJsonRef.current ?? (doc.content && !("format" in doc.content) ? doc.content : null);
+        const markdown = tiptapToMarkdown(json);
+        const ytext = ytextRef.current;
+        if (ytext) {
+          syncStringToYText(ytext, markdown);
+        }
+        newContent = { format: "markdown", text: markdown };
+      } else {
+        const markdown = ytextRef.current?.toString() ?? markdownText;
+        newContent = currentTiptapJson ?? {
+          type: "doc",
+          content: [
+            {
+              type: "paragraph",
+              content: markdown ? [{ type: "text", text: markdown }] : [],
+            },
+          ],
+        };
+        latestTiptapJsonRef.current = newContent;
+      }
+
+      setDoc((current) => (current ? { ...current, content: newContent } : null));
+
+      setSaveState("saving");
+      try {
+        const response = await fetch(`/api/documents/${doc.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "save", content: newContent }),
+        });
+        const data = (await response.json()) as { error?: string };
+        if (!response.ok) throw new Error(data.error ?? "Save failed");
+        setSaveState("saved");
+        toast.success(`Document converted to ${newFormat === "markdown" ? "Markdown" : "Doc"}`);
+      } catch (err) {
+        setSaveState("error");
+        toast.error(err instanceof Error ? err.message : "Conversion save failed");
       }
     },
     [doc, role, markdownText],
@@ -209,6 +309,10 @@ export function useMarkdownDocument(
     titleDraft,
     undo,
     redo,
+    format,
+    changeFormat,
+    latestTiptapJsonRef,
+    ytextRef,
   };
 }
 

@@ -129,20 +129,24 @@ export function EditorHeader({
                 </Tooltip>
               </Link>
               <div className="flex items-center gap-2 min-w-0">
-                {/* Dynamic-width input: grows/shrinks with character count via ch units */}
-                <Input
-                  className="h-9 border-transparent bg-transparent px-1.5 text-left text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
-                  style={{ width: `${Math.max(4, titleDraft.length + 0.5)}ch` }}
-                  value={titleDraft}
-                  onChange={(event) => setTitleDraft(event.target.value)}
-                  onBlur={renameDocument}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") event.currentTarget.blur();
-                  }}
-                  readOnly={!can(role, "rename")}
-                  maxLength={20}
-                  aria-label="Document title"
-                />
+                {/* Dynamic-width input: grows/shrinks with character count accurately using an inline-grid */}
+                <div className="relative inline-grid min-w-[60px] max-w-[260px] items-center">
+                  <span className="invisible col-start-1 row-start-1 px-1.5 text-left text-lg font-semibold whitespace-pre">
+                    {titleDraft || "Untitled"}
+                  </span>
+                  <Input
+                    className="col-start-1 row-start-1 h-9 w-full border-transparent bg-transparent px-1.5 text-left text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
+                    value={titleDraft}
+                    onChange={(event) => setTitleDraft(event.target.value)}
+                    onBlur={renameDocument}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") event.currentTarget.blur();
+                    }}
+                    readOnly={!can(role, "rename")}
+                    maxLength={20}
+                    aria-label="Document title"
+                  />
+                </div>
                 <SaveStateBadge state={saveState} />
               </div>
             </div>

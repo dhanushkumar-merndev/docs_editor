@@ -95,12 +95,12 @@ export function ShareDialog({
 
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-      <div className="w-full max-w-xl rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+      <div className="relative w-full max-w-xl rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+        <Button variant="ghost" size="icon" onClick={onClose} className="absolute right-4 top-4 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30">
+          <X className="size-4" />
+        </Button>
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Share document</h2>
-          <Button variant="ghost" size="icon" onClick={onClose} className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30">
-            <X className="size-4" />
-          </Button>
         </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <div className="min-w-0 flex-1">

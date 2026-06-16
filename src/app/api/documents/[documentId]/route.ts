@@ -8,6 +8,7 @@ import {
   shareDocumentByEmail,
   updatePageCountForUser,
   updatePageSizeForUser,
+  transferDocumentOwnership,
 } from "@/lib/document-service";
 import { requireCurrentUser } from "@/lib/session";
 import { emailSchema, pageSizeSchema, shareRoleSchema, tiptapDocSchema, markdownContentSchema, titleSchema } from "@/lib/validation";
@@ -25,13 +26,14 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   const actor = await requireCurrentUser();
   const { documentId } = await context.params;
   const body = (await request.json()) as {
-    action: "save" | "rename" | "pageSize" | "pageCount" | "shareEmail" | "leave";
+    action: "save" | "rename" | "pageSize" | "pageCount" | "shareEmail" | "leave" | "transfer";
     content?: TiptapDoc | MarkdownDoc;
     title?: string;
     pageSize?: string;
     pageCount?: number;
     email?: string;
     role?: string;
+    targetUserId?: string;
   };
 
   if (body.action === "save") {
@@ -76,6 +78,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
 
   if (body.action === "leave") {
     const result = await leaveSharedDocument(documentId, actor);
+    return NextResponse.json(result, { status: result.ok ? 200 : 403 });
+  }
+
+  if (body.action === "transfer") {
+    if (!body.targetUserId) return NextResponse.json({ error: "Missing targetUserId" }, { status: 400 });
+    const result = await transferDocumentOwnership(documentId, actor, body.targetUserId);
     return NextResponse.json(result, { status: result.ok ? 200 : 403 });
   }
 
