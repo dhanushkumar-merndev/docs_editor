@@ -2,6 +2,7 @@
 
 import type { RemotePointer } from "@/hooks/use-realtime-pointer";
 
+// Displays named blinking carets for remote collaborators inside the editor canvas.
 export function PointerOverlay({ pointers }: { pointers: Map<string, RemotePointer> }) {
   if (pointers.size === 0) return null;
 

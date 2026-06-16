@@ -1,181 +1,57 @@
 "use client";
 
-import { marked } from "marked";
-import {
-  ArrowLeft,
-  Check,
-  ChevronsUpDown,
-  Download,
-  Eye,
-  Moon,
-  Share2,
-  Sun,
-  X,
-} from "lucide-react";
+import { useRef, useState } from "react";
 import Link from "next/link";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import { toast } from "sonner";
-import { Avatar } from "@/components/ui/avatar";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { useAjaiaTheme } from "@/components/providers";
-import { can, getRoleLabel } from "@/lib/permissions";
-import type { AjaiaDocument, DocumentMember, MemberRole, MarkdownDoc } from "@/lib/types";
+import { EditorCanvas } from "@/components/document-editor/editor-canvas";
+import { EditorHeader } from "@/components/document-editor/editor-header";
+import { MarkdownPreview } from "@/components/document-editor/markdown-preview";
+import { ShareDialog } from "@/components/document-editor/share-dialog";
+import { pageWidthClass } from "@/components/document-editor/editor-types";
+import { useCaretBroadcast } from "@/hooks/document-editor/use-caret-broadcast";
+import { useAutoResizeTextarea } from "@/hooks/document-editor/use-auto-resize-textarea";
+import { useMarkdownDocument } from "@/hooks/document-editor/use-markdown-document";
+import { useRealtimePointer } from "@/hooks/use-realtime-pointer";
 import type { CurrentUser } from "@/lib/session";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { useRealtimePointer, getColor } from "@/hooks/use-realtime-pointer";
-import { PointerOverlay } from "@/components/pointer-overlay";
+import type { EditorDocument } from "@/components/document-editor/editor-types";
 
-type SaveState = "saved" | "dirty" | "saving" | "error";
-type EditorDocument = AjaiaDocument & { role: MemberRole };
-
-const pageWidthClass: Record<EditorDocument["pageSize"], string> = {
-  a4: "max-w-[794px]",
-  letter: "max-w-[816px]",
-  custom: "max-w-[900px]",
-};
-
+// Coordinates the document editor page by wiring document state, realtime presence, and reusable editor UI.
 export function EditorClient({ initialDocument, user }: { initialDocument: EditorDocument | null; user: CurrentUser }) {
-  const [doc, setDoc] = useState<EditorDocument | null>(initialDocument);
-  const [saveState, setSaveState] = useState<SaveState>("saved");
-  const [titleDraft, setTitleDraft] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const saveStateRef = useRef<SaveState>("saved");
-  const updatedAtRef = useRef(initialDocument?.updatedAt ?? "");
-
-  const contentObj = doc?.content;
-  const initialMarkdown =
-    contentObj && "format" in contentObj && contentObj.format === "markdown"
-      ? (contentObj as MarkdownDoc).text
-      : "";
-  const [markdownText, setMarkdownText] = useState(initialMarkdown);
-  const role = doc?.role ?? null;
-  const editable = can(role, "edit");
-
-  const livePointersEnabled = doc?.members && doc.members.length > 1;
   const editorCanvasRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
   const { activeUserIds, remoteDraft, remotePointers, trackPointer, trackEditing, broadcastDocumentDraft } = useRealtimePointer(
-    doc?.id ?? "",
+    initialDocument?.id ?? "",
     user.id,
     user.name,
   );
 
-  useEffect(() => {
-    const id = window.setTimeout(() => setTitleDraft(doc?.title ?? ""), 0);
-    return () => window.clearTimeout(id);
-  }, [doc?.title]);
+  const {
+    doc,
+    editable,
+    exportMarkdown,
+    markdownText,
+    renameDocument,
+    role,
+    saveState,
+    setDoc,
+    setMarkdownText,
+    setSaveState,
+    setTitleDraft,
+    titleDraft,
+  } = useMarkdownDocument(initialDocument, remoteDraft);
 
-  useEffect(() => {
-    saveStateRef.current = saveState;
-  }, [saveState]);
+  const livePointersEnabled = Boolean(doc?.members && doc.members.length > 1);
+  const sendCaretPosition = useCaretBroadcast({
+    canvasRef: editorCanvasRef,
+    enabled: livePointersEnabled,
+    textareaRef,
+    trackPointer,
+  });
 
-  useEffect(() => {
-    if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
-  }, [doc?.updatedAt]);
-
-  const previewHtml = marked.parse(markdownText);
-
-  useLayoutEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-    textarea.style.height = "auto";
-    textarea.style.height = `${textarea.scrollHeight}px`;
-  }, [markdownText, previewOpen, doc?.pageSize]);
-
-  useEffect(() => {
-    if (!remoteDraft || remoteDraft.text === markdownText) return;
-    if (editable && saveStateRef.current !== "saved") return;
-    const content = { format: "markdown" as const, text: remoteDraft.text } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
-    setMarkdownText(remoteDraft.text);
-    setDoc((current) => (current ? { ...current, content } : current));
-    setSaveState("saved");
-  }, [editable, markdownText, remoteDraft]);
-
-  const saveContent = useCallback(
-    async (silent = false) => {
-      if (!doc) return;
-      if (!can(role, "edit")) {
-        toast.error("You only have view access");
-        return;
-      }
-      const content = { format: "markdown" as const, text: markdownText } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
-      setSaveState("saving");
-      try {
-        const response = await fetch(`/api/documents/${doc.id}`, {
-          method: "PATCH",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "save", content, expectedUpdatedAt: updatedAtRef.current }),
-        });
-        const data = (await response.json()) as { error?: string; updatedAt?: string; conflict?: boolean; currentUpdatedAt?: string };
-        if (response.status === 409 || data.conflict) {
-          if (data.currentUpdatedAt) {
-            updatedAtRef.current = data.currentUpdatedAt;
-          }
-          throw new Error(data.error ?? "This document changed in another session. Review the latest version before saving.");
-        }
-        if (!response.ok) throw new Error(data.error ?? "Save failed");
-        const nextUpdatedAt = data.updatedAt ?? new Date().toISOString();
-        updatedAtRef.current = nextUpdatedAt;
-        setDoc((current) => (current ? { ...current, content, updatedAt: nextUpdatedAt } : current));
-        setSaveState("saved");
-        if (!silent) toast.success("Document saved");
-      } catch (error) {
-        setSaveState("error");
-        toast.error(error instanceof Error ? error.message : "Save failed");
-      }
-    },
-    [doc, role, markdownText],
-  );
-
-  useEffect(() => {
-    if (!editable || saveState !== "dirty") return;
-    const id = window.setTimeout(() => void saveContent(true), 1200);
-    return () => window.clearTimeout(id);
-  }, [editable, saveContent, saveState]);
-
-  useEffect(() => {
-    if (!doc) return;
-    const id = window.setInterval(() => {
-      if (saveStateRef.current !== "saved") return;
-      fetch(`/api/documents/${doc.id}`)
-        .then(async (response) => {
-          const data = (await response.json()) as { document?: EditorDocument };
-          if (!response.ok || !data.document) return;
-          if (Date.parse(data.document.updatedAt) <= Date.parse(updatedAtRef.current)) return;
-          const contentObj = data.document.content;
-          const remoteText = contentObj && "format" in contentObj && contentObj.format === "markdown"
-            ? (contentObj as MarkdownDoc).text
-            : "";
-          setMarkdownText(remoteText);
-          updatedAtRef.current = data.document.updatedAt;
-          setDoc(data.document);
-          setSaveState("saved");
-        })
-        .catch(() => {});
-    }, 5000);
-    return () => window.clearInterval(id);
-  }, [doc]);
+  useAutoResizeTextarea(textareaRef, markdownText, previewOpen, doc?.pageSize);
 
   if (!doc || !role) {
     return (
@@ -191,430 +67,45 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     );
   }
 
-  function rename() {
-    if (!doc) return;
-    if (!can(role, "rename")) {
-      setTitleDraft(doc.title);
-      toast.error("Only owners can rename this document");
-      return;
-    }
-    const nextTitle = titleDraft.trim();
-    if (!nextTitle || nextTitle.length > 120) {
-      toast.error("Title must be 1-120 characters");
-      setTitleDraft(doc.title);
-      return;
-    }
-    if (nextTitle !== doc.title) {
-      fetch(`/api/documents/${doc.id}`, {
-        method: "PATCH",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ action: "rename", title: nextTitle }),
-      })
-        .then(async (response) => {
-          const data = (await response.json()) as { error?: string };
-          if (!response.ok) throw new Error(data.error ?? "Rename failed");
-          setDoc((current) => (current ? { ...current, title: nextTitle } : current));
-        })
-        .catch((error: Error) => {
-          toast.error(error.message);
-          setTitleDraft(doc.title);
-        });
-    }
-  }
-
-  function exportMarkdown() {
-    if (!doc) return;
-    const markdown = markdownText;
-    const blob = new Blob([markdown || `# ${doc.title}\n`], { type: "text/markdown;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = `${doc.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "ajaia-document"}.md`;
-    anchor.click();
-    URL.revokeObjectURL(url);
-  }
-
-  function sendCaretPosition() {
-    const textarea = textareaRef.current;
-    const canvas = editorCanvasRef.current;
-    if (!livePointersEnabled || !textarea || !canvas) return;
-
-    const style = window.getComputedStyle(textarea);
-    const mirror = document.createElement("div");
-    const marker = document.createElement("span");
-    const textareaRect = textarea.getBoundingClientRect();
-    const canvasRect = canvas.getBoundingClientRect();
-
-    mirror.style.position = "fixed";
-    mirror.style.left = `${textareaRect.left}px`;
-    mirror.style.top = `${textareaRect.top}px`;
-    mirror.style.width = `${textarea.clientWidth}px`;
-    mirror.style.visibility = "hidden";
-    mirror.style.whiteSpace = "pre-wrap";
-    mirror.style.overflowWrap = "break-word";
-    mirror.style.font = style.font;
-    mirror.style.letterSpacing = style.letterSpacing;
-    mirror.style.lineHeight = style.lineHeight;
-    mirror.style.padding = style.padding;
-    mirror.style.border = style.border;
-    mirror.textContent = textarea.value.slice(0, textarea.selectionStart);
-    marker.textContent = "\u200b";
-    mirror.appendChild(marker);
-    document.body.appendChild(mirror);
-
-    const markerRect = marker.getBoundingClientRect();
-    trackPointer(markerRect.left - canvasRect.left, markerRect.top - canvasRect.top, {
-      editing: true,
-      force: true,
-    });
-    mirror.remove();
-  }
-
   return (
     <main className="flex h-dvh flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
-      <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-        <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
-          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
-            <Link href="/dashboard">
-              <Button variant="ghost" size="icon" title="Back">
-                <ArrowLeft className="size-4" />
-              </Button>
-            </Link>
-            <div className="flex items-center justify-start gap-2">
-              <Input
-                className="h-9 max-w-[200px] border-transparent bg-transparent px-2 text-left text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
-                value={titleDraft}
-                onChange={(event) => setTitleDraft(event.target.value)}
-                onBlur={rename}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") event.currentTarget.blur();
-                }}
-                readOnly={!can(role, "rename")}
-                maxLength={20}
-                title={can(role, "rename") ? "Rename document" : "Only owner can rename"}
-              />
-              <SaveStateBadge state={saveState} />
-            </div>
-            <div className="flex flex-wrap items-center justify-end gap-2">
-              <MembersStack members={doc?.members ?? []} activeUserIds={activeUserIds} />
-              <Button variant="outline" onClick={() => (can(role, "share") ? setShareOpen(true) : toast.error("Only owners can share this document"))}>
-                <Share2 className="size-4" />
-                Share
-              </Button>
-              <Button variant="outline" onClick={exportMarkdown}>
-                <Download className="size-4" />
-                Export
-              </Button>
-              <Button variant={previewOpen ? "secondary" : "outline"} onClick={() => setPreviewOpen(!previewOpen)}>
-                <Eye className="size-4" />
-                Preview
-              </Button>
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <button type="button" className="cursor-pointer rounded-full border-2 border-white dark:border-zinc-950">
-                    <Avatar name={user.name} src={user.image ?? undefined} />
-                  </button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent side="bottom" align="end" className="w-56">
-                  <DropdownMenuLabel>
-                    <span className="block truncate text-sm font-medium">{user.name}</span>
-                    <span className="block truncate text-xs font-normal text-zinc-500">{user.email}</span>
-                    {doc.ownerId === user.id ? (
-                      <span className="mt-0.5 block text-xs font-medium text-amber-600 dark:text-amber-400">Owner</span>
-                    ) : null}
-                  </DropdownMenuLabel>
-                  {doc.ownerId !== user.id ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <div className="px-2 py-1.5">
-                        <p className="text-xs font-medium text-zinc-500">Owner</p>
-                        <p className="truncate text-sm">{doc.ownerName}</p>
-                        <p className="truncate text-xs text-zinc-500">{doc.ownerEmail}</p>
-                      </div>
-                    </>
-                  ) : null}
-                  <DropdownMenuSeparator />
-                  <ThemeToggleInDropdown />
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </div>
-          </div>
-        </div>
-      </header>
+      <EditorHeader
+        activeUserIds={activeUserIds}
+        doc={doc}
+        exportMarkdown={exportMarkdown}
+        previewOpen={previewOpen}
+        renameDocument={renameDocument}
+        role={role}
+        saveState={saveState}
+        setPreviewOpen={setPreviewOpen}
+        setShareOpen={setShareOpen}
+        setTitleDraft={setTitleDraft}
+        titleDraft={titleDraft}
+        user={user}
+      />
 
       <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-8 lg:px-8">
         <div className={`mx-auto flex w-full items-start gap-6 transition-all duration-300 ${previewOpen ? "max-w-[1680px]" : `justify-center ${pageWidthClass[doc.pageSize]}`}`}>
-          <div className={`relative flex min-w-0 flex-col items-center transition-all duration-300 ease-out ${previewOpen ? "w-1/2" : "w-full"}`}>
-            <div
-              ref={editorCanvasRef}
-              className={`relative flex w-full flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 ${previewOpen ? "" : "min-h-[calc(100dvh-150px)]"}`}
-            >
-              <textarea
-                ref={textareaRef}
-                className={`w-full resize-none overflow-hidden bg-transparent font-mono text-sm leading-relaxed text-zinc-800 placeholder-zinc-400 outline-none dark:text-zinc-200 ${previewOpen ? "min-h-80" : "min-h-[calc(100dvh-246px)]"}`}
-                value={markdownText}
-                onChange={(e) => {
-                  const nextText = e.target.value;
-                  setMarkdownText(nextText);
-                  setSaveState("dirty");
-                  trackEditing(true);
-                  broadcastDocumentDraft(nextText);
-                  window.requestAnimationFrame(sendCaretPosition);
-                }}
-                onFocus={() => trackEditing(true)}
-                onClick={() => window.requestAnimationFrame(sendCaretPosition)}
-                onKeyUp={sendCaretPosition}
-                onSelect={sendCaretPosition}
-                onBlur={() => trackEditing(false)}
-                placeholder="Start writing Markdown..."
-                readOnly={!editable}
-              />
-              <PointerOverlay pointers={remotePointers} />
-            </div>
-          </div>
-          {previewOpen ? (
-            <div className="flex w-1/2 min-w-0 flex-col items-center" style={{ animation: "fadeIn 0.3s ease-out" }}>
-              <div className="w-full overflow-hidden rounded-lg bg-zinc-50 p-8 shadow-sm dark:bg-zinc-900 md:p-12">
-                <div
-                  className="prose prose-sm max-w-none break-words dark:prose-invert prose-pre:max-w-full prose-pre:overflow-x-auto prose-img:mx-auto prose-img:max-w-full"
-                  dangerouslySetInnerHTML={{ __html: previewHtml }}
-                />
-              </div>
-            </div>
-          ) : null}
+          <EditorCanvas
+            canvasRef={editorCanvasRef}
+            editable={editable}
+            markdownText={markdownText}
+            onBroadcastDraft={broadcastDocumentDraft}
+            onCaretMove={sendCaretPosition}
+            onEditStateChange={trackEditing}
+            onMarkdownChange={(nextText) => {
+              setMarkdownText(nextText);
+              setSaveState("dirty");
+            }}
+            previewOpen={previewOpen}
+            remotePointers={remotePointers}
+            textareaRef={textareaRef}
+          />
+          {previewOpen ? <MarkdownPreview markdownText={markdownText} /> : null}
         </div>
       </section>
 
       {shareOpen ? <ShareDialog doc={doc} onClose={() => setShareOpen(false)} onDocumentChange={setDoc} /> : null}
     </main>
-  );
-}
-
-function ThemeToggleInDropdown() {
-  const { mounted, theme, setTheme } = useAjaiaTheme();
-  const isDark = mounted && theme === "dark";
-  return (
-    <DropdownMenuItem onClick={() => setTheme(isDark ? "light" : "dark")}>
-      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
-      {isDark ? "Light mode" : "Dark mode"}
-    </DropdownMenuItem>
-  );
-}
-
-function SaveStateBadge({ state }: { state: SaveState }) {
-  const text = state === "dirty" ? "Unsaved changes" : state === "saving" ? "Saving..." : state === "error" ? "Save failed" : "Saved";
-  return (
-    <Badge className={state === "dirty" ? "border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ""}>
-      {state === "saved" ? <Check className="mr-1 size-3" /> : null}
-      {text}
-    </Badge>
-  );
-}
-
-function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; onClose: () => void; onDocumentChange: (doc: EditorDocument) => void }) {
-  const [open, setOpen] = useState(false);
-  const [search, setSearch] = useState("");
-  const [selected, setSelected] = useState<{ id: string; name: string; email: string } | null>(null);
-  const [results, setResults] = useState<{ id: string; name: string; email: string; image: string | null }[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [role, setRole] = useState<Exclude<MemberRole, "owner">>("viewer");
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (search.length < 2) {
-      return;
-    }
-    const id = setTimeout(async () => {
-      setLoading(true);
-      setResults([]);
-      try {
-        const response = await fetch(`/api/users/search?q=${encodeURIComponent(search)}`);
-        if (response.ok) {
-          const data = (await response.json()) as { users: { id: string; name: string; email: string; image: string | null }[] };
-          setResults(data.users);
-        } else {
-          const data = (await response.json()) as { error?: string };
-          if (response.status !== 429) setResults([]);
-          if (response.status === 429) toast.error(data.error ?? "Too many requests");
-        }
-      } catch {
-        setResults([]);
-      } finally {
-        setLoading(false);
-      }
-    }, 300);
-    debounceRef.current = id;
-    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [search]);
-
-  function handleShare() {
-    if (!selected) {
-      toast.error("Select a registered user from the list");
-      return;
-    }
-    fetch(`/api/documents/${doc.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "shareEmail", email: selected.email, role }),
-    })
-      .then(async (response) => {
-        const data = (await response.json()) as { error?: string };
-        if (!response.ok) throw new Error(data.error ?? "Share failed");
-        toast.success("Document shared");
-        setSelected(null);
-        setSearch("");
-        setOpen(false);
-        const fresh = await fetch(`/api/documents/${doc.id}`);
-        const freshData = (await fresh.json()) as { document?: EditorDocument };
-        if (freshData.document) onDocumentChange(freshData.document);
-      })
-      .catch((error: Error) => toast.error(error.message));
-  }
-
-  const alreadyMembers = new Set(doc.members.map((m) => m.userId));
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-      <div className="w-full max-w-xl rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold">Share document</h2>
-          <Button variant="ghost" size="icon" onClick={onClose} className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30">
-            <X className="size-4" />
-          </Button>
-        </div>
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <div className="min-w-0 flex-1">
-            <Popover open={open} onOpenChange={setOpen}>
-              <PopoverTrigger asChild>
-                <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
-                  {selected ? (
-                    <span className="truncate">{selected.name} ({selected.email})</span>
-                  ) : (
-                    <span className="text-muted-foreground">Search registered users...</span>
-                  )}
-                  <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-                <Command>
-                  <CommandInput placeholder="Type name or email..." value={search} onValueChange={setSearch} />
-                  <CommandList>
-                    <CommandEmpty>{loading ? "Searching..." : "No registered user found"}</CommandEmpty>
-                    <CommandGroup>
-                      {results.map((user) => (
-                        <CommandItem
-                          key={user.id}
-                          value={user.email}
-                          disabled={alreadyMembers.has(user.id)}
-                          onSelect={(currentValue) => {
-                            const found = results.find((u) => u.email === currentValue);
-                            if (found) {
-                              setSelected(found);
-                              setOpen(false);
-                            }
-                          }}
-                        >
-                          <Avatar name={user.name} />
-                          <div className="min-w-0 flex-1">
-                            <p className="truncate text-sm font-medium">{user.name}</p>
-                            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-                          </div>
-                          {alreadyMembers.has(user.id) ? (
-                            <span className="text-xs text-muted-foreground">Already member</span>
-                          ) : selected?.id === user.id ? (
-                            <Check className="size-4" />
-                          ) : null}
-                        </CommandItem>
-                      ))}
-                    </CommandGroup>
-                  </CommandList>
-                </Command>
-              </PopoverContent>
-            </Popover>
-          </div>
-          <Select value={role} onValueChange={(val) => setRole(val as Exclude<MemberRole, "owner">)}>
-            <SelectTrigger className="w-[130px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="viewer">Viewer</SelectItem>
-              <SelectItem value="editor">Editor</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button onClick={handleShare} disabled={!selected}>Invite</Button>
-        </div>
-        <div className="mt-5">
-          <p className="mb-2 text-sm font-semibold">Current members</p>
-          <div className="max-h-[168px] overflow-y-auto divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
-            {doc.members.map((member) => (
-              <div key={member.userId} className="flex items-center gap-3 p-3">
-                <Avatar name={member.name} />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{member.name}</p>
-                  <p className="truncate text-xs text-zinc-500">{member.email}</p>
-                </div>
-                <Badge>{getRoleLabel(member.role)}</Badge>
-              </div>
-            ))}
-          </div>
-        </div>
-        <p className="mt-4 text-xs text-zinc-500">Transfer ownership is documented as a stretch feature and intentionally left out of this MVP workflow.</p>
-      </div>
-    </div>
-  );
-}
-
-function MembersStack({ members, activeUserIds }: { members: DocumentMember[]; activeUserIds: Set<string> }) {
-  const max = 5;
-  const visible = members.slice(0, max);
-  const overflow = members.length - max;
-
-  return (
-    <Dialog>
-      <DialogTrigger asChild>
-        <button type="button" className="flex cursor-pointer items-center -space-x-2 hover:opacity-80" title="Document members">
-          {visible.map((member) => (
-            <div key={member.userId} className="relative rounded-full border-2 border-white dark:border-zinc-950">
-              <Avatar name={member.name} />
-              {activeUserIds.has(member.userId) ? (
-                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.18)] dark:border-zinc-950" />
-              ) : null}
-            </div>
-          ))}
-          {overflow > 0 ? (
-            <div className="z-10 flex size-8 items-center justify-center rounded-full border-2 border-white bg-zinc-200 text-xs font-medium text-zinc-600 dark:border-zinc-950 dark:bg-zinc-700 dark:text-zinc-300">
-              +{overflow}
-            </div>
-          ) : null}
-        </button>
-      </DialogTrigger>
-      <DialogContent className="max-w-sm">
-        <DialogHeader>
-          <DialogTitle>Document members</DialogTitle>
-        </DialogHeader>
-        <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-          {members.map((member) => (
-            <div key={member.userId} className="flex items-center gap-3 py-2.5">
-              <div className="relative shrink-0">
-                <Avatar name={member.name} />
-                {activeUserIds.has(member.userId) ? (
-                  <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-emerald-500 dark:border-zinc-950" />
-                ) : (
-                  <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white dark:border-zinc-950"
-                    style={{ backgroundColor: getColor(member.userId) }}
-                  />
-                )}
-              </div>
-              <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-medium">{member.name}</p>
-                <p className="truncate text-xs text-zinc-500">{member.email}</p>
-              </div>
-              <Badge>{getRoleLabel(member.role)}</Badge>
-            </div>
-          ))}
-        </div>
-      </DialogContent>
-    </Dialog>
   );
 }

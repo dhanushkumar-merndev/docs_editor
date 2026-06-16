@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
+// Manages Supabase Realtime presence, remote caret broadcasts, and live Markdown draft updates.
 const POINTER_COLORS = [
   "#EF4444", "#3B82F6", "#22C55E", "#F59E0B", "#A855F7",
   "#EC4899", "#14B8A6", "#F97316", "#6366F1", "#84CC16",
