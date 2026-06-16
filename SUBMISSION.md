@@ -4,7 +4,7 @@
 **Email:** dhanushkumar.merndev@gmail.com  
 **Assignment:** Ajaia LLC — Full Stack Product Engineer  
 **Build window:** Focused 6-hour assignment slice  
-**Final feature commit:** `0117387` — `Add stale save conflict guard`
+**Final feature commit:** `c93420c` — `Tighten realtime draft and caret behavior`
 
 ---
 
@@ -42,7 +42,8 @@ https://drive.google.com/drive/folders/19kpItCTwPNY0vr60UuzqNUxoPDOdv93d?usp=sha
 - Light/dark theme with flash prevention
 - Debounced search (client-side filter)
 - User profile editing (display name, time format, timezone)
-- Live markdown draft updates and blinking collaborator caret via Supabase Realtime Broadcast
+- Live Markdown draft updates over Supabase Realtime Broadcast with ~80ms throttling
+- Click-based blinking collaborator caret via Supabase Realtime Broadcast
 - Optimistic save conflict guard prevents silent overwrites when two users edit at once
 - Member avatar stack with active-user green dots
 - Activity logging to `document_activity` table
@@ -54,7 +55,7 @@ https://drive.google.com/drive/folders/19kpItCTwPNY0vr60UuzqNUxoPDOdv93d?usp=sha
 ## What Is Partial
 
 - The editor uses raw Markdown source (textarea) with rendered preview — not a Tiptap WYSIWYG toolbar. Users type Markdown syntax directly.
-- Concurrent editing is not CRDT/OT. The app blocks stale saves with a conflict message instead of silently merging two users' edits.
+- Concurrent editing is not CRDT/OT. Live drafts stream to idle viewers/editors, while local unsaved work is protected from being overwritten. The app blocks stale saves with a conflict message instead of silently merging two users' edits.
 - Image upload UI is not implemented (Supabase Storage bucket exists, validation schema ready)
 - Transfer ownership is not implemented in the UI
 - Public share links were intentionally removed in favor of email-only direct adds
@@ -88,7 +89,7 @@ Supabase Postgres + Drizzle ORM. JSONB `content` column supports two formats: `M
 Raw Markdown `<textarea>` + `marked` for live HTML preview. Chosen over Tiptap WYSIWYG because Markdown is simpler, export is free, and the preview pane gives instant visual feedback. Tradeoff: no toolbar formatting buttons — users type Markdown syntax.
 
 ### Sync
-Content sync uses lightweight Supabase Realtime Broadcast for live Markdown draft updates and a 5-second polling fallback for persisted changes. Saves include the last known document timestamp; if another session saved first, the server returns a conflict instead of overwriting. This is safer than last-write-wins for the MVP, but it is not full CRDT/OT merging.
+Content sync uses lightweight Supabase Realtime Broadcast for live Markdown draft updates with ~80ms throttling and a 5-second polling fallback for persisted changes. The collaborator marker is a click-based blinking caret, not a mouse-follow pointer. Saves include the last known document timestamp; if another session saved first, the server returns a conflict instead of overwriting. This is safer than last-write-wins for the MVP, but it is not full CRDT/OT merging.
 
 ### Sharing
 Email-only via registered user search. Owner/Editor/Viewer roles enforced server-side via `can()` helper. Max 10 users per document. No public/editor links.
