@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Edit3, FilePlus2, FileText, Loader2, LogOut, MoreVertical, Search, Share2, Trash2, Upload, UserMinus } from "lucide-react";
+import { ChevronRight, FilePlus2, FileText, Loader2, LogOut, MoreVertical, Search, Upload } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -20,36 +20,14 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { authClient } from "@/lib/auth-client";
+import { ConfirmDialog } from "./components/confirm-dialog";
+import { DocumentTable } from "./components/document-table";
+import { ProfileDialog } from "./components/profile-dialog";
+import { SidebarGroup } from "./components/sidebar-group";
+import { StatCard } from "./components/stat-card";
+import { timeZones, type DashboardView, type PendingAction, type ProfileState } from "./dashboard-types";
 import type { DocumentSummary } from "@/lib/document-service";
 import type { CurrentUser } from "@/lib/session";
-import { formatDate, type TimeFormat, type TimeZonePreference } from "@/lib/utils";
-
-type PendingAction =
-  | { type: "delete"; doc: DocumentSummary }
-  | { type: "leave"; doc: DocumentSummary }
-  | null;
-
-type DashboardView = "my" | "shared" | "recent";
-
-type ProfileState = {
-  displayName: string;
-  timeFormat: TimeFormat;
-  timeZone: TimeZonePreference;
-};
-
-const timeZones: { value: TimeZonePreference; label: string }[] = [
-  { value: "Asia/Kolkata", label: "India (IST)" },
-  { value: "America/New_York", label: "New York (ET)" },
-  { value: "America/Los_Angeles", label: "Los Angeles (PT)" },
-  { value: "America/Chicago", label: "Chicago (CT)" },
-  { value: "America/Toronto", label: "Toronto (ET)" },
-  { value: "Europe/London", label: "London (GMT/BST)" },
-  { value: "Europe/Berlin", label: "Berlin (CET)" },
-  { value: "Asia/Dubai", label: "Dubai (GST)" },
-  { value: "Asia/Singapore", label: "Singapore (SGT)" },
-  { value: "Asia/Tokyo", label: "Tokyo (JST)" },
-  { value: "Australia/Sydney", label: "Sydney (AET)" },
-];
 
 async function readJson<T>(response: Response): Promise<T> {
   const text = await response.text();
@@ -61,6 +39,7 @@ async function readJson<T>(response: Response): Promise<T> {
   }
 }
 
+// Coordinates dashboard data, route-local chunks, document creation/import, and profile actions.
 export function DashboardClient({ user }: { user: CurrentUser }) {
   const [documents, setDocuments] = useState<DocumentSummary[]>([]);
   const [query, setQuery] = useState("");
@@ -347,9 +326,9 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
         </header>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <Stat label="Accessible Documents" value={documents.length} loading={loading} onClick={() => setSelectedView("recent")} />
-          <Stat label="My Documents" value={myDocs.length} loading={loading} onClick={() => setSelectedView("my")} />
-          <Stat label="Shared With Me" value={sharedDocs.length} loading={loading} onClick={() => setSelectedView("shared")} />
+          <StatCard label="Accessible Documents" value={documents.length} loading={loading} onClick={() => setSelectedView("recent")} />
+          <StatCard label="My Documents" value={myDocs.length} loading={loading} onClick={() => setSelectedView("my")} />
+          <StatCard label="Shared With Me" value={sharedDocs.length} loading={loading} onClick={() => setSelectedView("shared")} />
         </div>
 
         <section className="mt-8">
@@ -379,218 +358,5 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
       {pendingAction ? <ConfirmDialog pendingAction={pendingAction} loading={actionLoading} onCancel={() => setPendingAction(null)} onConfirm={confirmAction} /> : null}
       {profileOpen ? <ProfileDialog profile={profile} onClose={() => setProfileOpen(false)} onSave={saveProfile} /> : null}
     </main>
-  );
-}
-
-function SidebarGroup({
-  title,
-  view,
-  activeView,
-  onView,
-  docs,
-  loading,
-  emptyText,
-}: {
-  title: string;
-  view: DashboardView;
-  activeView: DashboardView;
-  onView: (view: DashboardView) => void;
-  docs: DocumentSummary[];
-  loading: boolean;
-  emptyText: string;
-}) {
-  return (
-    <div>
-      <button
-        type="button"
-        className={`block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide transition ${
-          activeView === view ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-50"
-        }`}
-        onClick={() => onView(view)}
-      >
-        <span>{title}</span>
-      </button>
-      <div className="mt-2 space-y-1">
-        {loading ? <SidebarSkeleton /> : null}
-        {!loading && docs.length === 0 ? <p className="px-2 py-2 text-xs text-zinc-500 dark:text-zinc-400">{emptyText}</p> : null}
-        {docs.map((doc) => (
-          <Link
-            key={`${title}-${doc.id}`}
-            href={`/documents/${doc.id}`}
-            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
-          >
-            <FileText className="size-4 shrink-0" />
-            <span className="min-w-0 flex-1 truncate">{doc.title}</span>
-            <ChevronRight className="size-3 shrink-0 text-zinc-400" />
-          </Link>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function SidebarSkeleton() {
-  return (
-    <div className="space-y-2 px-2 py-1">
-      <Skeleton className="h-4 w-40" />
-      <Skeleton className="h-4 w-28" />
-      <Skeleton className="h-4 w-36" />
-    </div>
-  );
-}
-
-function Stat({ label, value, loading, onClick }: { label: string; value: number; loading: boolean; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      className="rounded-lg border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-      onClick={onClick}
-    >
-      <p className="text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
-      {loading ? <Skeleton className="mt-3 h-8 w-16" /> : <p className="mt-2 text-3xl font-semibold">{value}</p>}
-    </button>
-  );
-}
-
-function DocumentTable({
-  docs,
-  loading,
-  emptyText,
-  timeFormat,
-  timeZone,
-  onAction,
-}: {
-  docs: DocumentSummary[];
-  loading: boolean;
-  emptyText: string;
-  timeFormat: TimeFormat;
-  timeZone: TimeZonePreference;
-  onAction: (action: PendingAction) => void;
-}) {
-  return (
-    <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-      {loading ? <TableSkeleton /> : null}
-      {!loading && docs.length === 0 ? <p className="p-5 text-sm text-zinc-500 dark:text-zinc-400">{emptyText}</p> : null}
-      {docs.map((doc) => (
-        <div key={doc.id} className="grid gap-4 border-t border-zinc-200 px-5 py-4 first:border-t-0 dark:border-zinc-800 md:grid-cols-[1fr_auto] md:items-center">
-          <Link href={`/documents/${doc.id}`} className="min-w-0">
-            <p className="truncate font-medium">{doc.title}</p>
-            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{formatDate(doc.updatedAt, timeFormat, timeZone)}</p>
-          </Link>
-          <div className="flex flex-wrap items-center justify-end gap-6">
-            <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">
-              <Edit3 className="size-4" />
-              {doc.role === "viewer" ? "View" : "Edit"}
-            </Link>
-            {doc.role === "owner" ? (
-              <>
-                <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">
-                  <Share2 className="size-4" />
-                  Share
-                </Link>
-                <button type="button" className="inline-flex items-center text-sm font-medium text-red-600 transition hover:text-red-700" aria-label={`Delete ${doc.title}`} onClick={() => onAction({ type: "delete", doc })}>
-                  <Trash2 className="size-4" />
-                </button>
-              </>
-            ) : (
-              <button type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 transition hover:text-red-700" aria-label={`Leave ${doc.title}`} onClick={() => onAction({ type: "leave", doc })}>
-                <UserMinus className="size-4" />
-                Leave
-              </button>
-            )}
-          </div>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function TableSkeleton() {
-  return (
-    <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
-      {[0, 1, 2].map((item) => (
-        <div key={item} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="space-y-2">
-            <Skeleton className="h-4 w-52" />
-            <Skeleton className="h-3 w-36" />
-          </div>
-          <Skeleton className="h-8 w-24" />
-        </div>
-      ))}
-    </div>
-  );
-}
-
-function ConfirmDialog({ pendingAction, loading, onCancel, onConfirm }: { pendingAction: Exclude<PendingAction, null>; loading: boolean; onCancel: () => void; onConfirm: () => void }) {
-  const isDelete = pendingAction.type === "delete";
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-semibold">{isDelete ? "Delete document?" : "Leave shared document?"}</h2>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
-          {isDelete
-            ? `This will permanently delete "${pendingAction.doc.title}" for everyone.`
-            : `This will revoke your access to "${pendingAction.doc.title}".`}
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" onClick={onCancel} disabled={loading}>
-            Cancel
-          </Button>
-          <Button variant={isDelete ? "danger" : "primary"} onClick={onConfirm} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-            {isDelete ? "Delete" : "Leave"}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProfileDialog({ profile, onClose, onSave }: { profile: ProfileState; onClose: () => void; onSave: (profile: ProfileState) => void }) {
-  const [draft, setDraft] = useState(profile);
-
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-semibold">Edit profile</h2>
-        <div className="mt-4 space-y-4">
-          <label className="block text-sm font-medium">
-            Display name
-            <Input className="mt-2" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} />
-          </label>
-          <label className="block text-sm font-medium">
-            Time format
-            <select
-              className="mt-2 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              value={draft.timeFormat}
-              onChange={(event) => setDraft({ ...draft, timeFormat: event.target.value as TimeFormat })}
-            >
-              <option value="12h">12-hour time</option>
-              <option value="24h">24-hour time</option>
-            </select>
-          </label>
-          <label className="block text-sm font-medium">
-            Timezone
-            <select
-              className="mt-2 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              value={draft.timeZone}
-              onChange={(event) => setDraft({ ...draft, timeZone: event.target.value as TimeZonePreference })}
-            >
-              {timeZones.map((zone) => (
-                <option key={zone.value} value={zone.value}>
-                  {zone.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={() => onSave(draft)}>Save profile</Button>
-        </div>
-      </div>
-    </div>
   );
 }

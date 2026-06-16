@@ -5,7 +5,7 @@ import { toast } from "sonner";
 import { can } from "@/lib/permissions";
 import type { AjaiaDocument, MarkdownDoc } from "@/lib/types";
 import type { RemoteDocumentDraft } from "@/hooks/use-realtime-pointer";
-import type { EditorDocument, SaveState } from "@/components/document-editor/editor-types";
+import type { EditorDocument, SaveState } from "../components/editor-types";
 
 // Owns Markdown document state, autosave, polling, rename, export, and conflict protection.
 export function useMarkdownDocument(initialDocument: EditorDocument | null, remoteDraft: RemoteDocumentDraft | null) {

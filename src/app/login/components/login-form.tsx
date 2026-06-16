@@ -7,6 +7,7 @@ import { ThemeToggle } from "@/components/theme-toggle";
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
 
+// Renders the login route form and starts Better Auth Google sign-in.
 function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   return (
     <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" {...props}>
@@ -18,7 +19,7 @@ function GoogleIcon(props: React.SVGProps<SVGSVGElement>) {
   );
 }
 
-export function LoginClient() {
+export function LoginForm() {
   const [pending, startTransition] = useTransition();
 
   function signInWithGoogle() {

@@ -3,17 +3,17 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { EditorCanvas } from "@/components/document-editor/editor-canvas";
-import { EditorHeader } from "@/components/document-editor/editor-header";
-import { MarkdownPreview } from "@/components/document-editor/markdown-preview";
-import { ShareDialog } from "@/components/document-editor/share-dialog";
-import { pageWidthClass } from "@/components/document-editor/editor-types";
-import { useCaretBroadcast } from "@/hooks/document-editor/use-caret-broadcast";
-import { useAutoResizeTextarea } from "@/hooks/document-editor/use-auto-resize-textarea";
-import { useMarkdownDocument } from "@/hooks/document-editor/use-markdown-document";
 import { useRealtimePointer } from "@/hooks/use-realtime-pointer";
+import { EditorCanvas } from "./components/editor-canvas";
+import { EditorHeader } from "./components/editor-header";
+import { MarkdownPreview } from "./components/markdown-preview";
+import { ShareDialog } from "./components/share-dialog";
+import { pageWidthClass } from "./components/editor-types";
+import { useCaretBroadcast } from "./hooks/use-caret-broadcast";
+import { useAutoResizeTextarea } from "./hooks/use-auto-resize-textarea";
+import { useMarkdownDocument } from "./hooks/use-markdown-document";
 import type { CurrentUser } from "@/lib/session";
-import type { EditorDocument } from "@/components/document-editor/editor-types";
+import type { EditorDocument } from "./components/editor-types";
 
 // Coordinates the document editor page by wiring document state, realtime presence, and reusable editor UI.
 export function EditorClient({ initialDocument, user }: { initialDocument: EditorDocument | null; user: CurrentUser }) {

@@ -1,5 +1,6 @@
-import { LoginClient } from "@/app/login/login-client";
+import { LoginForm } from "@/app/login/components/login-form";
 
+// Hosts the route-local login form component.
 export default function LoginPage() {
-  return <LoginClient />;
+  return <LoginForm />;
 }
