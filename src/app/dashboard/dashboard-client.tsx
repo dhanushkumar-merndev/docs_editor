@@ -79,10 +79,9 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
   });
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  async function loadDocuments(search = "") {
+  async function loadDocuments() {
     setLoading(true);
-    const suffix = search.trim().length >= 2 ? `?q=${encodeURIComponent(search.trim())}` : "";
-    const response = await fetch(`/api/documents${suffix}`);
+    const response = await fetch("/api/documents");
     if (response.status === 401) {
       window.location.href = "/login";
       return;
@@ -110,10 +109,11 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
     return () => window.clearTimeout(id);
   }, []);
 
-  useEffect(() => {
-    const id = window.setTimeout(() => void loadDocuments(query), 300);
-    return () => window.clearTimeout(id);
-  }, [query]);
+  const searchResults = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return documents.filter((doc) => doc.title.toLowerCase().includes(q)).slice(0, 10);
+  }, [query, documents]);
 
   const myDocs = useMemo(() => documents.filter((doc) => doc.role === "owner"), [documents]);
   const sharedDocs = useMemo(() => documents.filter((doc) => doc.role !== "owner"), [documents]);
@@ -244,7 +244,7 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
         </Button>
         <label className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900">
           {importing ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-          Import .txt/.md
+          Import Document
           <input className="sr-only" type="file" accept=".txt,.md,text/plain,text/markdown" onChange={(event) => void importTextFile(event.target.files?.[0])} />
         </label>
         <p className="mt-2 px-1 text-xs text-zinc-500 dark:text-zinc-400">Supported file types: .txt and .md</p>
@@ -255,9 +255,37 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
         </div>
 
         <nav className="mt-6 space-y-6 overflow-y-auto pr-1">
-          <SidebarGroup title="Documents" view="my" activeView={selectedView} onView={setSelectedView} docs={sidebarMyDocs} loading={loading} emptyText="No owned documents" />
-          <SidebarGroup title="Shared With Me" view="shared" activeView={selectedView} onView={setSelectedView} docs={sidebarSharedDocs} loading={loading} emptyText="No shared documents" />
-          <SidebarGroup title="Recent Documents" view="recent" activeView={selectedView} onView={setSelectedView} docs={recentDocs} loading={loading} emptyText="No recent documents" />
+          {query.trim().length < 2 ? (
+            <>
+              <SidebarGroup title="Documents" view="my" activeView={selectedView} onView={setSelectedView} docs={sidebarMyDocs} loading={loading} emptyText="No owned documents" />
+              <SidebarGroup title="Shared With Me" view="shared" activeView={selectedView} onView={setSelectedView} docs={sidebarSharedDocs} loading={loading} emptyText="No shared documents" />
+              <SidebarGroup title="Recent Documents" view="recent" activeView={selectedView} onView={setSelectedView} docs={recentDocs} loading={loading} emptyText="No recent documents" />
+            </>
+          ) : (
+            <div className="space-y-2">
+              <p className="px-2 text-xs font-medium uppercase tracking-wide text-zinc-500">Search Results</p>
+              {loading ? (
+                <div className="space-y-1 px-2 py-1">
+                  <Skeleton className="h-4 w-44" />
+                  <Skeleton className="h-4 w-32" />
+                  <Skeleton className="h-4 w-40" />
+                </div>
+              ) : documents.length === 0 ? (
+                <p className="px-2 py-2 text-xs text-zinc-500">No documents found</p>
+              ) : (
+                documents.slice(0, 10).map((doc) => (
+                  <Link
+                    key={doc.id}
+                    href={`/documents/${doc.id}`}
+                    className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+                  >
+                    <FileText className="size-4 shrink-0" />
+                    <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+                  </Link>
+                ))
+              )}
+            </div>
+          )}
         </nav>
 
         <div className="mt-auto rounded-lg border border-zinc-200 bg-zinc-50 p-2 dark:border-zinc-800 dark:bg-zinc-900">
@@ -294,7 +322,10 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
         </div>
       </aside>
 
-      <section className="min-w-0 flex-1 overflow-y-auto p-5 lg:p-8">
+      <section className="relative min-w-0 flex-1 overflow-y-auto p-5 lg:p-8">
+        <div className="absolute right-4 top-4">
+          <ThemeToggle />
+        </div>
         <header className="flex flex-col gap-4 border-b border-zinc-200 pb-6 dark:border-zinc-800 md:flex-row md:items-center md:justify-between">
           <div className="lg:hidden">
             <Logo />
@@ -308,18 +339,13 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
               <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search documents..." />
             </div>
-            <Button onClick={createDocument} disabled={creating}>
-              {creating ? <Loader2 className="size-4 animate-spin" /> : <FilePlus2 className="size-4" />}
-              Create
-            </Button>
-            <ThemeToggle />
           </div>
         </header>
 
         <div className="mt-6 grid gap-4 md:grid-cols-3">
-          <Stat label="Accessible Documents" value={documents.length} loading={loading} active={selectedView === "recent"} onClick={() => setSelectedView("recent")} />
-          <Stat label="My Documents" value={myDocs.length} loading={loading} active={selectedView === "my"} onClick={() => setSelectedView("my")} />
-          <Stat label="Shared With Me" value={sharedDocs.length} loading={loading} active={selectedView === "shared"} onClick={() => setSelectedView("shared")} />
+          <Stat label="Accessible Documents" value={documents.length} loading={loading} onClick={() => setSelectedView("recent")} />
+          <Stat label="My Documents" value={myDocs.length} loading={loading} onClick={() => setSelectedView("my")} />
+          <Stat label="Shared With Me" value={sharedDocs.length} loading={loading} onClick={() => setSelectedView("shared")} />
         </div>
 
         <section className="mt-8">
@@ -373,8 +399,8 @@ function SidebarGroup({
     <div>
       <button
         type="button"
-        className={`block w-full rounded-md px-2 py-1 text-left text-xs font-medium uppercase tracking-wide transition ${
-          activeView === view ? "bg-zinc-100 text-zinc-950 dark:bg-zinc-900 dark:text-zinc-50" : "text-zinc-500 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-zinc-50"
+        className={`block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide transition ${
+          activeView === view ? "bg-zinc-200 text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-50"
         }`}
         onClick={() => onView(view)}
       >
@@ -408,13 +434,11 @@ function SidebarSkeleton() {
   );
 }
 
-function Stat({ label, value, loading, active, onClick }: { label: string; value: number; loading: boolean; active: boolean; onClick: () => void }) {
+function Stat({ label, value, loading, onClick }: { label: string; value: number; loading: boolean; onClick: () => void }) {
   return (
     <button
       type="button"
-      className={`rounded-lg border p-4 text-left transition ${
-        active ? "border-zinc-400 bg-white dark:border-zinc-600 dark:bg-zinc-900" : "border-zinc-200 bg-white hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
-      }`}
+      className="rounded-lg border border-zinc-200 bg-white p-4 text-left transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:border-zinc-700"
       onClick={onClick}
     >
       <p className="text-sm text-zinc-500 dark:text-zinc-400">{label}</p>
@@ -443,16 +467,12 @@ function DocumentTable({
       {loading ? <TableSkeleton /> : null}
       {!loading && docs.length === 0 ? <p className="p-5 text-sm text-zinc-500 dark:text-zinc-400">{emptyText}</p> : null}
       {docs.map((doc) => (
-        <div key={doc.id} className="grid gap-3 border-t border-zinc-200 p-4 first:border-t-0 dark:border-zinc-800 md:grid-cols-[1fr_170px_86px_auto] md:items-center">
-          <div className="min-w-0">
+        <div key={doc.id} className="grid gap-4 border-t border-zinc-200 px-5 py-4 first:border-t-0 dark:border-zinc-800 md:grid-cols-[1fr_auto] md:items-center">
+          <Link href={`/documents/${doc.id}`} className="min-w-0">
             <p className="truncate font-medium">{doc.title}</p>
-            <p className="truncate text-sm text-zinc-500 dark:text-zinc-400">
-              {doc.ownerName} · {doc.ownerEmail}
-            </p>
-          </div>
-          <p className="text-sm text-zinc-500 dark:text-zinc-400">{formatDate(doc.updatedAt, timeFormat, timeZone)}</p>
-          <span className="inline-flex items-center text-sm font-medium text-zinc-700 dark:text-zinc-300">{doc.role === "owner" ? "Owner" : doc.role === "editor" ? "Editor" : "Viewer"}</span>
-          <div className="flex flex-wrap items-center justify-end gap-4">
+            <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{formatDate(doc.updatedAt, timeFormat, timeZone)}</p>
+          </Link>
+          <div className="flex flex-wrap items-center justify-end gap-6">
             <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-50">
               <Edit3 className="size-4" />
               {doc.role === "viewer" ? "View" : "Edit"}
@@ -463,9 +483,8 @@ function DocumentTable({
                   <Share2 className="size-4" />
                   Share
                 </Link>
-                <button type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-red-600 transition hover:text-red-700" aria-label={`Delete ${doc.title}`} onClick={() => onAction({ type: "delete", doc })}>
+                <button type="button" className="inline-flex items-center text-sm font-medium text-red-600 transition hover:text-red-700" aria-label={`Delete ${doc.title}`} onClick={() => onAction({ type: "delete", doc })}>
                   <Trash2 className="size-4" />
-                  Delete
                 </button>
               </>
             ) : (
@@ -485,13 +504,11 @@ function TableSkeleton() {
   return (
     <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
       {[0, 1, 2].map((item) => (
-        <div key={item} className="grid gap-3 p-4 md:grid-cols-[1fr_180px_90px_auto] md:items-center">
+        <div key={item} className="grid gap-3 p-4 md:grid-cols-[1fr_auto] md:items-center">
           <div className="space-y-2">
             <Skeleton className="h-4 w-52" />
-            <Skeleton className="h-3 w-72 max-w-full" />
+            <Skeleton className="h-3 w-36" />
           </div>
-          <Skeleton className="h-4 w-28" />
-          <Skeleton className="h-6 w-16" />
           <Skeleton className="h-8 w-24" />
         </div>
       ))}

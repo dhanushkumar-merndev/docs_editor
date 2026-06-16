@@ -6,10 +6,11 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
 
-const client = postgres(process.env.DATABASE_URL, {
-  max: 1,
-  idle_timeout: 5,
-  max_lifetime: 60,
+const connectionString = process.env.DATABASE_URL;
+
+const client = postgres(connectionString, {
+  max: 3,
+  idle_timeout: 30,
   prepare: false,
   ssl: "require",
 });
