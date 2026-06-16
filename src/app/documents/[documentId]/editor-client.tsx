@@ -14,7 +14,6 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { PointerEvent } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -235,13 +234,40 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     URL.revokeObjectURL(url);
   }
 
-  function sendPointerFromEvent(event: PointerEvent<HTMLDivElement>, editing = false) {
-    if (!livePointersEnabled) return;
-    const rect = event.currentTarget.getBoundingClientRect();
-    trackPointer(event.clientX - rect.left, event.clientY - rect.top, {
-      editing,
-      force: editing,
+  function sendCaretPosition() {
+    const textarea = textareaRef.current;
+    const canvas = editorCanvasRef.current;
+    if (!livePointersEnabled || !textarea || !canvas) return;
+
+    const style = window.getComputedStyle(textarea);
+    const mirror = document.createElement("div");
+    const marker = document.createElement("span");
+    const textareaRect = textarea.getBoundingClientRect();
+    const canvasRect = canvas.getBoundingClientRect();
+
+    mirror.style.position = "fixed";
+    mirror.style.left = `${textareaRect.left}px`;
+    mirror.style.top = `${textareaRect.top}px`;
+    mirror.style.width = `${textarea.clientWidth}px`;
+    mirror.style.visibility = "hidden";
+    mirror.style.whiteSpace = "pre-wrap";
+    mirror.style.overflowWrap = "break-word";
+    mirror.style.font = style.font;
+    mirror.style.letterSpacing = style.letterSpacing;
+    mirror.style.lineHeight = style.lineHeight;
+    mirror.style.padding = style.padding;
+    mirror.style.border = style.border;
+    mirror.textContent = textarea.value.slice(0, textarea.selectionStart);
+    marker.textContent = "\u200b";
+    mirror.appendChild(marker);
+    document.body.appendChild(mirror);
+
+    const markerRect = marker.getBoundingClientRect();
+    trackPointer(markerRect.left - canvasRect.left, markerRect.top - canvasRect.top, {
+      editing: true,
+      force: true,
     });
+    mirror.remove();
   }
 
   return (
@@ -322,7 +348,6 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
             <div
               ref={editorCanvasRef}
               className={`relative flex w-full flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 ${previewOpen ? "" : "min-h-[calc(100dvh-150px)]"}`}
-              onPointerDown={(event) => sendPointerFromEvent(event, true)}
             >
               <textarea
                 ref={textareaRef}
@@ -334,8 +359,12 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
                   setSaveState("dirty");
                   trackEditing(true);
                   broadcastDocumentDraft(nextText);
+                  window.requestAnimationFrame(sendCaretPosition);
                 }}
                 onFocus={() => trackEditing(true)}
+                onClick={() => window.requestAnimationFrame(sendCaretPosition)}
+                onKeyUp={sendCaretPosition}
+                onSelect={sendCaretPosition}
                 onBlur={() => trackEditing(false)}
                 placeholder="Start writing Markdown..."
                 readOnly={!editable}

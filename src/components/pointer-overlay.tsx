@@ -14,11 +14,11 @@ export function PointerOverlay({ pointers }: { pointers: Map<string, RemotePoint
           style={{ left: ptr.x, top: ptr.y }}
         >
           <div
-            className="remote-caret absolute -left-px -top-5 h-6 w-0.5 rounded-sm"
+            className="remote-caret absolute -left-px top-0 h-6 w-0.5 rounded-sm"
             style={{ backgroundColor: ptr.color }}
           />
           <div
-            className="absolute -left-0.5 -top-10 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-medium text-white shadow-sm"
+            className="absolute -left-0.5 -top-5 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-medium text-white shadow-sm"
             style={{ backgroundColor: ptr.color }}
           >
             {ptr.name}
