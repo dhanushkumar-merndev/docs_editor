@@ -14,7 +14,7 @@ export function PointerOverlay({ pointers }: { pointers: Map<string, RemotePoint
           style={{ left: ptr.x, top: ptr.y }}
         >
           <div
-            className="absolute -left-px h-5 w-0.5 animate-pulse rounded-sm"
+            className="remote-caret absolute -left-px h-6 w-0.5 rounded-sm"
             style={{ backgroundColor: ptr.color }}
           />
           <div
@@ -23,12 +23,6 @@ export function PointerOverlay({ pointers }: { pointers: Map<string, RemotePoint
           >
             {ptr.name}
           </div>
-          {ptr.editing ? (
-            <div
-              className="absolute -left-0.5 top-5 size-1.5 animate-ping rounded-full shadow-sm"
-              style={{ backgroundColor: ptr.color }}
-            />
-          ) : null}
         </div>
       ))}
     </>

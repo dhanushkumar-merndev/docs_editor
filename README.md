@@ -1,10 +1,10 @@
 # Ajaia Docs
 
-Ajaia Docs is a lightweight collaborative document editor inspired by Google Docs. It focuses on the assignment-critical slice: Google login, dashboard, document creation, rich text editing, save/reopen, image insertion, sharing with roles, public editor links, owned/shared separation, validation, persistence, and tests.
+Ajaia Docs is a lightweight collaborative document editor inspired by Google Docs. It focuses on the assignment-critical slice: Google login, dashboard, document creation, Markdown editing with live preview, save/reopen, file import (.txt/.md), sharing with roles, owned/shared separation, validation, persistence, and tests.
 
 ## Tech Stack
 
-Next.js App Router, TypeScript, Tailwind CSS, shadcn-style UI primitives, Better Auth, Google OAuth, Supabase Postgres, Supabase Storage, Supabase Realtime, Drizzle ORM, Tiptap, Zod, Upstash Redis, Vitest, and Vercel.
+Next.js App Router, TypeScript, Tailwind CSS v4, shadcn-style UI primitives, Better Auth (Google OAuth), Supabase Postgres, Drizzle ORM, Markdown editor (`marked` rendering), Zod, and Vercel.
 
 ## Local Setup
 
@@ -28,17 +28,15 @@ Open `http://localhost:3000` and sign in with Google.
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
-- `UPSTASH_REDIS_REST_URL`
-- `UPSTASH_REDIS_REST_TOKEN`
+- `UPSTASH_REDIS_REST_URL` (optional, rate limiting not wired)
+- `UPSTASH_REDIS_REST_TOKEN` (optional)
 
 ## Supabase Setup
 
 1. Create a Supabase project.
 2. Use the session pooler Postgres URL for `DATABASE_URL`.
 3. Run `pnpm db:push`.
-4. Create a Storage bucket named `document-assets`.
-
-Image validation is capped at 2 MB per image and 60 images per document.
+4. Storage bucket `document-assets` is configured but image upload UI is not implemented.
 
 ## Better Auth Setup
 
@@ -47,7 +45,7 @@ Add `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, and `GOOGLE_CLI
 Google redirect URI:
 
 ```txt
-https://ajaia-assessment.vercel.app/api/auth/callback/google
+https://assignment-ajaia.vercel.app/api/auth/callback/google
 ```
 
 ## Commands
@@ -62,14 +60,20 @@ pnpm db:push
 
 ## How To Test Sharing
 
-1. Sign in with Google.
+1. Sign in with Google in one browser.
 2. Create a document.
-3. Share by entering another registered user's email as viewer/editor.
-4. Or generate a public editor link; anyone signed in with the link can modify the document.
+3. Open the Share dialog and search for another registered user's email.
+4. Assign Viewer or Editor role and click Invite.
+5. Sign in with Google in a different browser/incognito as the other user.
+6. The shared document appears under "Shared With Me" in the dashboard.
+7. Owners can edit, rename, share, and delete. Editors can edit content only. Viewers can read only.
 
 ## Known Limitations
 
 - Full CRDT realtime editing is intentionally out of scope.
-- The editor uses a visual page canvas, not true print-grade pagination.
+- The editor uses raw Markdown source with a rendered preview pane — not a WYSIWYG rich text editor.
 - Comments, suggestion mode, version history, enterprise ACLs, and full `.docx` parsing are intentionally omitted.
-- Transfer ownership is documented as a stretch feature and not fully implemented in the UI.
+- Image upload UI is not implemented (Supabase Storage bucket exists).
+- Transfer ownership is documented as a stretch feature and not implemented in the UI.
+- Rate limiting (Upstash Redis) is not wired.
+- `.txt` file imports create legacy Tiptap JSON format — reopen in the Markdown editor may show raw JSON text.

@@ -13,7 +13,8 @@ import {
   X,
 } from "lucide-react";
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import type { PointerEvent } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -42,6 +43,8 @@ import { can, getRoleLabel } from "@/lib/permissions";
 import type { AjaiaDocument, DocumentMember, MemberRole, MarkdownDoc } from "@/lib/types";
 import type { CurrentUser } from "@/lib/session";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { useRealtimePointer, getColor } from "@/hooks/use-realtime-pointer";
+import { PointerOverlay } from "@/components/pointer-overlay";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type EditorDocument = AjaiaDocument & { role: MemberRole };
@@ -70,6 +73,15 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
 
+  const livePointersEnabled = doc?.members && doc.members.length > 1;
+  const editorCanvasRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const { activeUserIds, remoteDraft, remotePointers, trackPointer, trackEditing, broadcastDocumentDraft } = useRealtimePointer(
+    doc?.id ?? "",
+    user.id,
+    user.name,
+  );
+
   useEffect(() => {
     const id = window.setTimeout(() => setTitleDraft(doc?.title ?? ""), 0);
     return () => window.clearTimeout(id);
@@ -84,6 +96,22 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
   }, [doc?.updatedAt]);
 
   const previewHtml = marked.parse(markdownText);
+
+  useLayoutEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+    textarea.style.height = "auto";
+    textarea.style.height = `${textarea.scrollHeight}px`;
+  }, [markdownText, previewOpen, doc?.pageSize]);
+
+  useEffect(() => {
+    if (!remoteDraft || remoteDraft.text === markdownText) return;
+    if (editable && saveStateRef.current !== "saved") return;
+    const content = { format: "markdown" as const, text: remoteDraft.text } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
+    setMarkdownText(remoteDraft.text);
+    setDoc((current) => (current ? { ...current, content } : current));
+    setSaveState("saved");
+  }, [editable, markdownText, remoteDraft]);
 
   const saveContent = useCallback(
     async (silent = false) => {
@@ -201,8 +229,17 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     URL.revokeObjectURL(url);
   }
 
+  function sendPointerFromEvent(event: PointerEvent<HTMLDivElement>, editing = false) {
+    if (!livePointersEnabled) return;
+    const rect = event.currentTarget.getBoundingClientRect();
+    trackPointer(event.clientX - rect.left, event.clientY - rect.top, {
+      editing,
+      force: editing,
+    });
+  }
+
   return (
-    <main className="flex h-dvh flex-col bg-zinc-100 dark:bg-zinc-950">
+    <main className="flex h-dvh flex-col overflow-hidden bg-zinc-100 dark:bg-zinc-950">
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
           <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
@@ -227,7 +264,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
               <SaveStateBadge state={saveState} />
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <MembersStack members={doc?.members ?? []} activeUserIds={new Set()} />
+              <MembersStack members={doc?.members ?? []} activeUserIds={activeUserIds} />
               <Button variant="outline" onClick={() => (can(role, "share") ? setShareOpen(true) : toast.error("Only owners can share this document"))}>
                 <Share2 className="size-4" />
                 Share
@@ -273,24 +310,39 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
         </div>
       </header>
 
-      <section className="flex min-h-0 flex-1 px-3 py-8 lg:px-8">
-        <div className={`flex min-h-0 flex-1 gap-6 transition-all duration-300 ${previewOpen ? "" : "justify-center"}`}>
-          <div className={`relative flex min-h-0 flex-1 flex-col transition-all duration-300 ease-out ${previewOpen ? "w-1/2 min-w-0" : `w-full ${pageWidthClass[doc.pageSize]}`}`}>
-            <div className="flex flex-1 flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
+      <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-8 lg:px-8">
+        <div className={`mx-auto flex w-full items-start gap-6 transition-all duration-300 ${previewOpen ? "max-w-[1680px]" : `justify-center ${pageWidthClass[doc.pageSize]}`}`}>
+          <div className={`relative flex min-w-0 flex-col items-center transition-all duration-300 ease-out ${previewOpen ? "w-1/2" : "w-full"}`}>
+            <div
+              ref={editorCanvasRef}
+              className={`relative flex w-full flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 ${previewOpen ? "" : "min-h-[calc(100dvh-150px)]"}`}
+              onPointerMove={(event) => sendPointerFromEvent(event)}
+              onPointerDown={(event) => sendPointerFromEvent(event, true)}
+            >
               <textarea
-                className="min-h-0 flex-1 w-full resize-none bg-transparent font-mono text-sm leading-relaxed text-zinc-800 placeholder-zinc-400 outline-none dark:text-zinc-200"
+                ref={textareaRef}
+                className={`w-full resize-none overflow-hidden bg-transparent font-mono text-sm leading-relaxed text-zinc-800 placeholder-zinc-400 outline-none dark:text-zinc-200 ${previewOpen ? "min-h-80" : "min-h-[calc(100dvh-246px)]"}`}
                 value={markdownText}
-                onChange={(e) => { setMarkdownText(e.target.value); setSaveState("dirty"); }}
+                onChange={(e) => {
+                  const nextText = e.target.value;
+                  setMarkdownText(nextText);
+                  setSaveState("dirty");
+                  trackEditing(true);
+                  broadcastDocumentDraft(nextText);
+                }}
+                onFocus={() => trackEditing(true)}
+                onBlur={() => trackEditing(false)}
                 placeholder="Start writing Markdown..."
                 readOnly={!editable}
               />
+              <PointerOverlay pointers={remotePointers} />
             </div>
           </div>
           {previewOpen ? (
-            <div className="w-1/2 min-w-0" style={{ animation: "fadeIn 0.3s ease-out" }}>
-              <div className="rounded-lg bg-zinc-50 p-8 shadow-sm dark:bg-zinc-900 md:p-12">
+            <div className="flex w-1/2 min-w-0 flex-col items-center" style={{ animation: "fadeIn 0.3s ease-out" }}>
+              <div className="w-full overflow-hidden rounded-lg bg-zinc-50 p-8 shadow-sm dark:bg-zinc-900 md:p-12">
                 <div
-                  className="prose prose-sm max-w-none dark:prose-invert"
+                  className="prose prose-sm max-w-none break-words dark:prose-invert prose-pre:max-w-full prose-pre:overflow-x-auto prose-img:mx-auto prose-img:max-w-full"
                   dangerouslySetInnerHTML={{ __html: previewHtml }}
                 />
               </div>
@@ -480,19 +532,19 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
 }
 
 function MembersStack({ members, activeUserIds }: { members: DocumentMember[]; activeUserIds: Set<string> }) {
-  const max = 3;
+  const max = 5;
   const visible = members.slice(0, max);
   const overflow = members.length - max;
 
   return (
     <Dialog>
       <DialogTrigger asChild>
-        <button type="button" className="flex cursor-pointer items-center -space-x-2 hover:opacity-80">
+        <button type="button" className="flex cursor-pointer items-center -space-x-2 hover:opacity-80" title="Document members">
           {visible.map((member) => (
             <div key={member.userId} className="relative rounded-full border-2 border-white dark:border-zinc-950">
               <Avatar name={member.name} />
               {activeUserIds.has(member.userId) ? (
-                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white bg-emerald-500 dark:border-zinc-950" />
+                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white bg-emerald-500 shadow-[0_0_0_2px_rgba(16,185,129,0.18)] dark:border-zinc-950" />
               ) : null}
             </div>
           ))}
@@ -514,7 +566,11 @@ function MembersStack({ members, activeUserIds }: { members: DocumentMember[]; a
                 <Avatar name={member.name} />
                 {activeUserIds.has(member.userId) ? (
                   <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-emerald-500 dark:border-zinc-950" />
-                ) : null}
+                ) : (
+                  <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white dark:border-zinc-950"
+                    style={{ backgroundColor: getColor(member.userId) }}
+                  />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{member.name}</p>

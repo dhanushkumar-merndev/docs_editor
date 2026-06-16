@@ -32,12 +32,24 @@ export type RemotePointer = {
   lastSeen: number;
 };
 
+export type RemoteDocumentDraft = {
+  userId: string;
+  name: string;
+  text: string;
+  updatedAt: number;
+};
+
 const THROTTLE_MS = 100;
+const CONTENT_THROTTLE_MS = 350;
 const STALE_MS = 5000;
 
 export function useRealtimePointer(documentId: string, userId: string, userName: string) {
   const [remotePointers, setRemotePointers] = useState<Map<string, RemotePointer>>(new Map());
+  const [activeUserIds, setActiveUserIds] = useState<Set<string>>(new Set([userId]));
+  const [remoteDraft, setRemoteDraft] = useState<RemoteDocumentDraft | null>(null);
   const sentRef = useRef(0);
+  const contentSentRef = useRef(0);
+  const lastPointerRef = useRef({ x: 0, y: 0 });
   const channelRef = useRef<RealtimeChannel | null>(null);
 
   useEffect(() => {
@@ -45,7 +57,15 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
     if (!supabase) return;
 
     const channel = supabase.channel(`pointer:${documentId}`, {
-      config: { broadcast: { ack: false, self: false } },
+      config: {
+        broadcast: { ack: false, self: false },
+        presence: { key: userId },
+      },
+    });
+
+    channel.on("presence", { event: "sync" }, () => {
+      const presenceState = channel.presenceState<{ userId: string }>();
+      setActiveUserIds(new Set(Object.keys(presenceState)));
     });
 
     channel.on("broadcast", { event: "pointer" }, (payload) => {
@@ -58,14 +78,25 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
       });
     });
 
-    channel.subscribe();
+    channel.on("broadcast", { event: "document-content" }, (payload) => {
+      const data = payload.payload as RemoteDocumentDraft;
+      if (data.userId === userId) return;
+      setRemoteDraft(data);
+      setActiveUserIds((prev) => new Set(prev).add(data.userId));
+    });
+
+    channel.subscribe((status) => {
+      if (status === "SUBSCRIBED") {
+        void channel.track({ userId, name: userName, color: getColor(userId), onlineAt: new Date().toISOString() });
+      }
+    });
     channelRef.current = channel;
 
     return () => {
       channel.unsubscribe();
       channelRef.current = null;
     };
-  }, [documentId, userId]);
+  }, [documentId, userId, userName]);
 
   useEffect(() => {
     const id = setInterval(() => {
@@ -85,9 +116,10 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
   }, []);
 
   const trackPointer = useCallback(
-    (x: number, y: number, editing?: boolean) => {
+    (x: number, y: number, options?: { editing?: boolean; force?: boolean }) => {
       const now = Date.now();
-      if (now - sentRef.current < THROTTLE_MS) return;
+      lastPointerRef.current = { x, y };
+      if (!options?.force && now - sentRef.current < THROTTLE_MS) return;
       sentRef.current = now;
 
       const channel = channelRef.current;
@@ -96,7 +128,7 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
       channel.send({
         type: "broadcast",
         event: "pointer",
-        payload: { userId, name: userName, color: getColor(userId), x, y, editing: editing ?? false },
+        payload: { userId, name: userName, color: getColor(userId), x, y, editing: options?.editing ?? false },
       });
     },
     [userId, userName],
@@ -116,11 +148,25 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
       channelRef.current.send({
         type: "broadcast",
         event: "pointer",
-        payload: { userId, name: userName, color: getColor(userId), x: 0, y: 0, editing },
+        payload: { userId, name: userName, color: getColor(userId), ...lastPointerRef.current, editing },
       });
     },
     [userId, userName],
   );
 
-  return { remotePointers, trackPointer, trackEditing };
+  const broadcastDocumentDraft = useCallback(
+    (text: string) => {
+      const now = Date.now();
+      if (now - contentSentRef.current < CONTENT_THROTTLE_MS) return;
+      contentSentRef.current = now;
+      channelRef.current?.send({
+        type: "broadcast",
+        event: "document-content",
+        payload: { userId, name: userName, text, updatedAt: now },
+      });
+    },
+    [userId, userName],
+  );
+
+  return { activeUserIds, remoteDraft, remotePointers, trackPointer, trackEditing, broadcastDocumentDraft };
 }

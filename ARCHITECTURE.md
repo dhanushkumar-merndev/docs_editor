@@ -1,19 +1,37 @@
 # Architecture
 
-Ajaia Docs uses the Next.js App Router for a compact full-stack product with route-level UI, API routes, server-side session checks, and Vercel deployment.
+## Why Next.js App Router
 
-Better Auth handles Google OAuth and persists users, sessions, accounts, and verification state in Supabase Postgres through the Drizzle adapter.
+Next.js App Router provides route-level UI (dashboard, editor, login), API routes (`/api/documents`, `/api/auth/[...all]`), server-side session checks, and one-command Vercel deployment. This keeps the full stack compact without a separate backend server.
 
-Supabase Postgres stores documents, members, assets, profiles, share links, and `document_activity` audit history. Drizzle defines the schema in TypeScript and pushes it with `pnpm db:push`.
+## Auth
 
-Supabase Storage is the intended production image store. Uploaded editor images should be validated, capped at 2 MB, written to `document-assets`, saved in `document_assets`, and inserted into Tiptap as URLs. The current editor enforces validation and inserts images into the document JSON; replacing data URLs with Storage URLs is the next production-hardening step.
+Better Auth handles Google OAuth and persists users, sessions, accounts, and verification state in Supabase Postgres through the Drizzle adapter. Session cookie is HttpOnly and checked server-side on every API call via `requireCurrentUser()`.
 
-Tiptap powers rich text editing because it stores structured JSON and preserves formatting on save/reopen.
+## Database
 
-Public links are editor links: any signed-in user with the token can be added as an editor. Email sharing is stricter and only works for users already present in the Better Auth user table.
+Supabase Postgres stores documents, members, assets, profiles, share links (unused), and `document_activity` audit history. Drizzle defines the schema in TypeScript and pushes it with `pnpm db:push`. The `content` column is JSONB and supports two formats: `TiptapDoc` (legacy) and `MarkdownDoc` (current).
 
-The editor uses a visual page canvas to approximate document layout. True print-grade pagination was intentionally deprioritized in favor of core editing, sharing, persistence, and upload workflows.
+## Storage
 
-Full CRDT collaborative editing was intentionally deferred. The product prioritizes core lifecycle reliability: create, edit, save, reopen, share, and audit operations.
+Supabase Storage bucket `document-assets` is configured but the image upload UI was intentionally cut from MVP scope. The bucket structure (`{documentId}/{assetId}-{fileName}`) is ready for future use.
 
-Rate limiting is planned through Upstash Redis for create, share, upload-image, and search endpoints.
+## Editor
+
+The editor uses a `<textarea>` for raw Markdown source input and `marked` for live rendered HTML preview. This approach was chosen over Tiptap WYSIWYG because Markdown is simpler to implement, export comes for free, and the preview gives immediate visual feedback. The tradeoff is no toolbar-based formatting — users type Markdown syntax directly.
+
+## Sync
+
+Document sync uses polling (5-second interval) to fetch remote changes. True realtime collaboration via Supabase Realtime Broadcast was added for live pointer awareness (cursor position broadcasting with mouse movement). Polling was chosen for content sync because it requires no WebSocket infrastructure and is sufficient for MVP sharing scenarios.
+
+## Sharing
+
+Sharing is email-only via registered user search. Owner, Editor, and Viewer roles are enforced server-side with a `can()` permission helper. Maximum 10 users per document. No public/editor link sharing — this was removed to keep the scope focused on the core permission model.
+
+## What Was Deprioritized
+
+- Full CRDT collaborative editing — intentionally deferred. The product prioritizes core lifecycle reliability: create, edit, save, reopen, share.
+- Print-grade pagination — the editor is a single continuous canvas with page width simulation (A4/Letter/Custom).
+- Image upload — Supabase Storage is configured but the upload dialog was cut.
+- Rate limiting — Upstash Redis is connected but not wired into endpoints.
+- Transfer ownership — documented as stretch, not implemented.
