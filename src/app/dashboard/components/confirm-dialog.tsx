@@ -28,9 +28,8 @@ export function ConfirmDialog({
           <Button variant="outline" onClick={onCancel} disabled={loading}>
             Cancel
           </Button>
-          <Button variant={isDelete ? "danger" : "primary"} onClick={onConfirm} disabled={loading}>
-            {loading ? <Loader2 className="size-4 animate-spin" /> : null}
-            {isDelete ? "Delete" : "Leave"}
+          <Button variant={isDelete ? "danger" : "primary"} onClick={onConfirm} disabled={loading} className="min-w-[72px]">
+            {loading ? <Loader2 className="size-4 animate-spin mx-auto" /> : (isDelete ? "Delete" : "Leave")}
           </Button>
         </div>
       </div>

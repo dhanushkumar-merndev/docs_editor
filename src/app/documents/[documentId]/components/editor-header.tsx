@@ -12,6 +12,7 @@ import {
   Italic,
   List,
   ListOrdered,
+  MoreVertical,
   Redo2,
   Share2,
   Undo2,
@@ -78,6 +79,7 @@ export function EditorHeader({
   editable,
   exportMarkdown,
   onFormat,
+  onDocumentChange,
   previewMode,
   previewOpen,
   renameDocument,
@@ -96,6 +98,7 @@ export function EditorHeader({
   editable: boolean;
   exportMarkdown: () => void;
   onFormat: (kind: "bold" | "italic" | "h1" | "h2" | "h3" | "bullet" | "numbered" | "undo" | "redo") => void;
+  onDocumentChange: (doc: EditorDocument) => void;
   previewMode: PreviewMode;
   previewOpen: boolean;
   renameDocument: () => void;
@@ -111,7 +114,7 @@ export function EditorHeader({
   return (
     <TooltipProvider delayDuration={400}>
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
-        <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
+        <div className="flex flex-col gap-3 px-3 py-3 lg:px-4">
           <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-4 w-full">
             {/* Left: Navigation and Document Title */}
             <div className="flex items-center justify-start gap-2 min-w-0">
@@ -128,8 +131,8 @@ export function EditorHeader({
               <div className="flex items-center gap-2 min-w-0">
                 {/* Dynamic-width input: grows/shrinks with character count via ch units */}
                 <Input
-                  className="h-9 border-transparent bg-transparent px-2 text-left text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
-                  style={{ width: `${Math.max(4, titleDraft.length + 2)}ch` }}
+                  className="h-9 border-transparent bg-transparent px-1.5 text-left text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
+                  style={{ width: `${Math.max(4, titleDraft.length + 0.5)}ch` }}
                   value={titleDraft}
                   onChange={(event) => setTitleDraft(event.target.value)}
                   onBlur={renameDocument}
@@ -184,7 +187,13 @@ export function EditorHeader({
 
             {/* Right: Actions, Share, Export, Preview, Profile */}
             <div className="flex items-center justify-end gap-2 min-w-0">
-              <MembersStack members={doc.members} activeUserIds={activeUserIds} />
+              <MembersStack
+                members={doc.members}
+                activeUserIds={activeUserIds}
+                isOwner={role === "owner"}
+                documentId={doc.id}
+                onMembersChange={(members) => onDocumentChange({ ...doc, members })}
+              />
               <Button
                 variant="outline"
                 onClick={() =>
@@ -218,9 +227,9 @@ export function EditorHeader({
               ) : null}
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button type="button" className="cursor-pointer rounded-full border-2 border-white dark:border-zinc-950">
-                    <Avatar name={user.name} src={user.image ?? undefined} />
-                  </button>
+                  <Button variant="ghost" size="icon" className="rounded-full" aria-label="User settings">
+                    <MoreVertical className="size-4" />
+                  </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent side="bottom" align="end" className="w-56">
                   <DropdownMenuLabel>

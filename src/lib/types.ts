@@ -17,6 +17,7 @@ export type DocumentMember = {
   role: MemberRole;
   name: string;
   email: string;
+  image: string | null;
 };
 
 export type AjaiaDocument = {
@@ -46,8 +47,11 @@ export type DocumentActivityAction =
   | "document.renamed"
   | "document.saved"
   | "document.deleted"
+  | "document.ownership_transferred"
   | "member.shared"
   | "member.left"
+  | "member.role_changed"
+  | "member.removed"
   | "share_link.created"
   | "share_link.opened"
   | "profile.updated";

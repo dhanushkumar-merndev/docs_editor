@@ -59,24 +59,6 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     setActiveFormats(next);
   }, []);
 
-  // Keyboard shortcuts: Ctrl+Z = undo, Ctrl+Shift+Z = redo
-  useEffect(() => {
-    function handleKeyDown(e: KeyboardEvent) {
-      const isMac = navigator.platform.toUpperCase().includes("MAC");
-      const ctrl = isMac ? e.metaKey : e.ctrlKey;
-      if (!ctrl) return;
-      if (e.key === "z" && !e.shiftKey) {
-        e.preventDefault();
-        undo();
-      } else if ((e.key === "z" && e.shiftKey) || e.key === "y") {
-        e.preventDefault();
-        redo();
-      }
-    }
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [undo, redo]);
-
   const {
     activeUserIds,
     awareness,
@@ -95,6 +77,34 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     undo,
     redo,
   } = useMarkdownDocument(initialDocument, user, textareaRef);
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    function handleKeyDown(e: KeyboardEvent) {
+      const isMac = navigator.platform.toUpperCase().includes("MAC");
+      const ctrl = isMac ? e.metaKey : e.ctrlKey;
+      if (!ctrl) return;
+
+      let format: Parameters<typeof applyMarkdownFormat>[0] | null = null;
+
+      if (e.key === "z" && !e.shiftKey) format = "undo";
+      else if ((e.key === "z" && e.shiftKey) || e.key === "y") format = "redo";
+      else if (e.key === "b") format = "bold";
+      else if (e.key === "i") format = "italic";
+      else if (e.key === "1") format = "h1";
+      else if (e.key === "2") format = "h2";
+      else if (e.key === "3") format = "h3";
+      else if (e.key === " " && !e.shiftKey) format = "bullet";
+      else if (e.key === " " && e.shiftKey) format = "numbered";
+
+      if (format) {
+        e.preventDefault();
+        applyMarkdownFormat(format);
+      }
+    }
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  });
 
   if (!doc || !role) {
     return (
@@ -168,6 +178,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
         editable={editable}
         exportMarkdown={exportMarkdown}
         onFormat={applyMarkdownFormat}
+        onDocumentChange={setDoc}
         previewMode={previewMode}
         previewOpen={previewOpen}
         renameDocument={renameDocument}

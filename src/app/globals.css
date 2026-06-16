@@ -54,8 +54,7 @@ body {
 }
 
 ::selection {
-  background: #18181b;
-  color: white;
+  background: rgba(150, 150, 150, 0.3);
 }
 
 .ProseMirror {
@@ -192,5 +191,33 @@ body {
   }
   html {
     @apply font-sans;
+    scrollbar-width: thin;
+    scrollbar-color: #d4d4d8 transparent;
+  }
+  .dark html {
+    scrollbar-color: #3f3f46 transparent;
   }
 }
+
+/* WebKit Scrollbars */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d4d4d8;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #3f3f46;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a1a1aa;
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #52525b;
+}
+

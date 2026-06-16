@@ -126,6 +126,7 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
       role: documentMembers.role,
       name: authUser.name,
       email: authUser.email,
+      image: authUser.image,
     })
     .from(documentMembers)
     .innerJoin(authUser, eq(documentMembers.userId, authUser.id))
@@ -150,6 +151,7 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
         role: normalizeRole(member.role),
         name: member.name,
         email: member.email,
+        image: member.image ?? null,
       }),
     ),
     role: normalizeRole(membership.role),

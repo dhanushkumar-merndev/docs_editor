@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, ChevronsUpDown, X } from "lucide-react";
+import { Check, ChevronsUpDown, Loader2, X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
@@ -36,6 +36,7 @@ export function ShareDialog({
   const [results, setResults] = useState<{ id: string; name: string; email: string; image: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<Exclude<MemberRole, "owner">>("viewer");
+  const [inviting, setInviting] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ export function ShareDialog({
       toast.error("Select a registered user from the list");
       return;
     }
+    setInviting(true);
     fetch(`/api/documents/${doc.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
@@ -85,7 +87,8 @@ export function ShareDialog({
         const freshData = (await fresh.json()) as { document?: EditorDocument };
         if (freshData.document) onDocumentChange(freshData.document);
       })
-      .catch((error: Error) => toast.error(error.message));
+      .catch((error: Error) => toast.error(error.message))
+      .finally(() => setInviting(false));
   }
 
   const alreadyMembers = new Set(doc.members.map((member) => member.userId));
@@ -153,12 +156,14 @@ export function ShareDialog({
             <SelectTrigger className="w-[130px]">
               <SelectValue />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent position="popper" sideOffset={4}>
               <SelectItem value="viewer">Viewer</SelectItem>
               <SelectItem value="editor">Editor</SelectItem>
             </SelectContent>
           </Select>
-          <Button onClick={handleShare} disabled={!selected}>Invite</Button>
+          <Button onClick={handleShare} disabled={!selected || inviting} className="min-w-[70px]">
+            {inviting ? <Loader2 className="size-4 animate-spin mx-auto" /> : "Invite"}
+          </Button>
         </div>
         <div className="mt-5">
           <p className="mb-2 text-sm font-semibold">Current members</p>
