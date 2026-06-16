@@ -7,6 +7,11 @@ export type TiptapDoc = JSONContent & {
   type: "doc";
 };
 
+export type MarkdownDoc = {
+  format: "markdown";
+  text: string;
+};
+
 export type DocumentMember = {
   userId: string;
   role: MemberRole;
@@ -17,7 +22,7 @@ export type DocumentMember = {
 export type AjaiaDocument = {
   id: string;
   title: string;
-  content: TiptapDoc;
+  content: TiptapDoc | MarkdownDoc;
   ownerId: string;
   ownerName: string;
   ownerEmail: string;

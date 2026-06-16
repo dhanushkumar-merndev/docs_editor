@@ -29,4 +29,9 @@ export const tiptapDocSchema = z.object({
   content: z.array(z.custom<JSONContent>()).optional(),
 }) satisfies z.ZodType<JSONContent>;
 
+export const markdownContentSchema = z.object({
+  format: z.literal("markdown"),
+  text: z.string(),
+});
+
 export const textFileNameSchema = z.string().regex(/\.(txt|md)$/i);

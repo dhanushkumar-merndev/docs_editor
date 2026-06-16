@@ -4,12 +4,16 @@ import { documentActivity, documentMembers, documents, user as authUser } from "
 import { MAX_DOCUMENT_MEMBERS } from "@/lib/limits";
 import { can } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/session";
-import type { AjaiaDocument, DocumentMember, MemberRole, PageSize, TiptapDoc } from "@/lib/types";
+import type { AjaiaDocument, DocumentMember, MemberRole, PageSize, TiptapDoc, MarkdownDoc } from "@/lib/types";
 
-const emptyDoc: TiptapDoc = {
-  type: "doc",
-  content: [{ type: "paragraph" }],
+const emptyMarkdown: MarkdownDoc = {
+  format: "markdown",
+  text: "",
 };
+
+function isTiptapDoc(content: TiptapDoc | MarkdownDoc): content is TiptapDoc {
+  return "type" in content && content.type === "doc";
+}
 
 export type DocumentSummary = {
   id: string;
@@ -87,12 +91,13 @@ export async function listAccessibleDocuments(actor: CurrentUser): Promise<Docum
   }));
 }
 
-export async function createDocumentForUser(actor: CurrentUser, title = "Untitled Document", content: TiptapDoc = emptyDoc, imported = false) {
+export async function createDocumentForUser(actor: CurrentUser, title = "Untitled Document", content?: TiptapDoc | MarkdownDoc, imported = false) {
+  const docContent = content ?? emptyMarkdown;
   const [doc] = await db
     .insert(documents)
     .values({
       title,
-      content,
+      content: docContent,
       ownerId: actor.id,
       pageSize: "a4",
       pageCount: 1,
@@ -131,7 +136,7 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
   return {
     id: doc.id,
     title: doc.title,
-    content: doc.content as TiptapDoc,
+    content: doc.content as TiptapDoc | MarkdownDoc,
     ownerId: doc.ownerId,
     ownerName: owner?.name ?? "Owner",
     ownerEmail: owner?.email ?? "",
@@ -151,7 +156,7 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
   };
 }
 
-export async function saveDocumentContent(documentId: string, actor: CurrentUser, content: TiptapDoc) {
+export async function saveDocumentContent(documentId: string, actor: CurrentUser, content: TiptapDoc | MarkdownDoc) {
   const doc = await getDocumentForUser(documentId, actor);
   if (!doc || !can(doc.role, "edit")) return { ok: false, error: "No edit access" };
   const updatedAt = new Date();

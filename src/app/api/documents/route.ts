@@ -1,9 +1,8 @@
 import { NextResponse } from "next/server";
 import { createDocumentForUser, listAccessibleDocuments, searchDocumentsForUser } from "@/lib/document-service";
 import { requireCurrentUser } from "@/lib/session";
-import { searchQuerySchema, titleSchema } from "@/lib/validation";
-import { tiptapDocSchema } from "@/lib/validation";
-import type { TiptapDoc } from "@/lib/types";
+import { searchQuerySchema, titleSchema, tiptapDocSchema, markdownContentSchema } from "@/lib/validation";
+import type { TiptapDoc, MarkdownDoc } from "@/lib/types";
 
 export async function GET(request: Request) {
   const actor = await requireCurrentUser();
@@ -19,11 +18,18 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const actor = await requireCurrentUser();
-  const body = (await request.json()) as { title?: string; content?: TiptapDoc; imported?: boolean };
+  const body = (await request.json()) as { title?: string; content?: TiptapDoc | MarkdownDoc; imported?: boolean };
   const parsed = titleSchema.safeParse(body.title ?? "Untitled Document");
   if (!parsed.success) return NextResponse.json({ error: "Invalid title" }, { status: 400 });
-  const parsedContent = body.content ? tiptapDocSchema.safeParse(body.content) : null;
-  if (parsedContent && !parsedContent.success) return NextResponse.json({ error: "Invalid document content" }, { status: 400 });
-  const documentId = await createDocumentForUser(actor, parsed.data, parsedContent ? (parsedContent.data as TiptapDoc) : undefined, Boolean(body.imported));
+  let validatedContent: TiptapDoc | MarkdownDoc | undefined;
+  if (body.content) {
+    const isMarkdown = "format" in body.content && body.content.format === "markdown";
+    const result = isMarkdown
+      ? markdownContentSchema.safeParse(body.content)
+      : tiptapDocSchema.safeParse(body.content);
+    if (!result.success) return NextResponse.json({ error: "Invalid document content" }, { status: 400 });
+    validatedContent = result.data as TiptapDoc | MarkdownDoc;
+  }
+  const documentId = await createDocumentForUser(actor, parsed.data, validatedContent, Boolean(body.imported));
   return NextResponse.json({ documentId });
 }

@@ -1,31 +1,15 @@
 "use client";
 
-import LinkExtension from "@tiptap/extension-link";
-import Placeholder from "@tiptap/extension-placeholder";
-import Underline from "@tiptap/extension-underline";
-import type { Editor } from "@tiptap/core";
-import type { JSONContent } from "@tiptap/core";
-import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
+import { marked } from "marked";
 import {
   ArrowLeft,
-  Bold,
-  Undo2,
-  Redo2,
   Check,
   ChevronsUpDown,
   Download,
   Eye,
-  Heading1,
-  Heading2,
-  Heading3,
-  Italic,
-  List,
-  ListOrdered,
   Moon,
   Share2,
   Sun,
-  UnderlineIcon,
   X,
 } from "lucide-react";
 import Link from "next/link";
@@ -55,10 +39,8 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAjaiaTheme } from "@/components/providers";
 import { can, getRoleLabel } from "@/lib/permissions";
-import type { AjaiaDocument, DocumentMember, MemberRole } from "@/lib/types";
+import type { AjaiaDocument, DocumentMember, MemberRole, MarkdownDoc } from "@/lib/types";
 import type { CurrentUser } from "@/lib/session";
-import { useRealtimePointer, getColor } from "@/hooks/use-realtime-pointer";
-import { PointerOverlay } from "@/components/pointer-overlay";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -70,91 +52,21 @@ const pageWidthClass: Record<EditorDocument["pageSize"], string> = {
   custom: "max-w-[900px]",
 };
 
-function renderInline(node: JSONContent): string {
-  if (node.type === "text") {
-    let text = node.text ?? "";
-    for (const mark of node.marks ?? []) {
-      if (mark.type === "bold") text = `**${text}**`;
-      if (mark.type === "italic") text = `*${text}*`;
-      if (mark.type === "strike") text = `~~${text}~~`;
-      if (mark.type === "code") text = `\`${text}\``;
-      if (mark.type === "link") text = `[${text}](${String(mark.attrs?.href ?? "")})`;
-    }
-    return text;
-  }
-  if (node.type === "hardBreak") return "\n";
-  return (node.content ?? []).map(renderInline).join("");
-}
-
-function inlineText(node: JSONContent): string {
-  return (node.content ?? []).map(renderInline).join("");
-}
-
-function tiptapToMarkdown(node: JSONContent | undefined): string {
-  if (!node) return "";
-  if (node.type === "doc") return (node.content ?? []).map(tiptapToMarkdown).filter(Boolean).join("\n\n").trim();
-  if (node.type === "paragraph") return inlineText(node);
-  if (node.type === "heading") return `${"#".repeat(Number(node.attrs?.level ?? 1))} ${inlineText(node)}`;
-  if (node.type === "bulletList") return (node.content ?? []).map(renderListItem).join("\n");
-  if (node.type === "orderedList") return (node.content ?? []).map((item, i) => renderListItem(item, i + 1)).join("\n");
-  if (node.type === "listItem") return renderListItem(node);
-  if (node.type === "codeBlock") {
-    const lang = String(node.attrs?.language ?? "");
-    return `\`\`\`${lang}\n${inlineText(node)}\n\`\`\``;
-  }
-  if (node.type === "blockquote") {
-    const inner = (node.content ?? []).map(tiptapToMarkdown).join("\n");
-    return inner.split("\n").map((l) => `> ${l}`).join("\n");
-  }
-  if (node.type === "horizontalRule") return "---";
-  if (node.type === "image") return `![${String(node.attrs?.alt ?? "image")}](${String(node.attrs?.src ?? "")})`;
-  if (node.type === "table") {
-    const rows = (node.content ?? []).map((row) => {
-      const cells = (row.content ?? []).map((cell) => ` ${inlineText(cell)} `);
-      return `|${cells.join("|")}|`;
-    });
-    if (rows.length >= 2) {
-      const colCount = rows[0].split("|").length - 2;
-      rows.splice(1, 0, `|${Array(colCount).fill("---").join("|")}|`);
-    }
-    return rows.join("\n");
-  }
-  if (node.type === "taskList") return (node.content ?? []).map(renderTaskItem).join("\n");
-  if (node.type === "taskItem") return renderTaskItem(node);
-  return inlineText(node);
-}
-
-function renderListItem(item: JSONContent, index?: number) {
-  const prefix = index != null ? `${index}.` : "-";
-  const blocks = item.content ?? [];
-  const lines: string[] = [];
-  for (const block of blocks) {
-    if (block.type === "paragraph") {
-      lines.push(inlineText(block));
-    } else {
-      const nested = tiptapToMarkdown(block);
-      if (nested) lines.push(nested.split("\n").map((l) => `  ${l}`).join("\n"));
-    }
-  }
-  return `${prefix} ${lines.join("\n  ")}`;
-}
-
-function renderTaskItem(item: JSONContent) {
-  const checked = item.attrs?.checked ? "x" : " ";
-  const text = inlineText(item);
-  return `- [${checked}] ${text}`;
-}
-
 export function EditorClient({ initialDocument, user }: { initialDocument: EditorDocument | null; user: CurrentUser }) {
   const [doc, setDoc] = useState<EditorDocument | null>(initialDocument);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [titleDraft, setTitleDraft] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
   const [previewOpen, setPreviewOpen] = useState(false);
-  const applyingRemoteUpdateRef = useRef(false);
   const saveStateRef = useRef<SaveState>("saved");
   const updatedAtRef = useRef(initialDocument?.updatedAt ?? "");
-  const editingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const contentObj = doc?.content;
+  const initialMarkdown =
+    contentObj && "format" in contentObj && contentObj.format === "markdown"
+      ? (contentObj as MarkdownDoc).text
+      : "";
+  const [markdownText, setMarkdownText] = useState(initialMarkdown);
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
 
@@ -162,31 +74,6 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     const id = window.setTimeout(() => setTitleDraft(doc?.title ?? ""), 0);
     return () => window.clearTimeout(id);
   }, [doc?.title]);
-
-  const editor = useEditor(
-    {
-      extensions: [
-        StarterKit.configure({ link: false, underline: false }),
-        Underline.configure(),
-        LinkExtension.configure({ openOnClick: false }),
-        Placeholder.configure({ placeholder: "Start writing..." }),
-      ],
-      content: doc?.content,
-      editable,
-      immediatelyRender: false,
-      onUpdate: () => {
-        if (!applyingRemoteUpdateRef.current) {
-          setSaveState("dirty");
-          if (livePointersEnabled) {
-            trackEditingRef.current(true);
-            if (editingTimerRef.current) clearTimeout(editingTimerRef.current);
-            editingTimerRef.current = setTimeout(() => trackEditingRef.current(false), 2000);
-          }
-        }
-      },
-    },
-    [doc?.id, editable],
-  );
 
   useEffect(() => {
     saveStateRef.current = saveState;
@@ -196,45 +83,16 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
   }, [doc?.updatedAt]);
 
-  const previewMarkdown = editor && doc ? tiptapToMarkdown(editor.getJSON()) : "";
-
-  useEffect(() => {
-    editor?.setEditable(editable);
-  }, [editor, editable]);
-
-  const livePointersEnabled = doc?.members && doc.members.length > 1;
-  const editorCanvasRef = useRef<HTMLDivElement>(null);
-  const { remotePointers, trackPointer, trackEditing } = useRealtimePointer(
-    doc?.id ?? "",
-    user.id,
-    user.name,
-  );
-  const trackEditingRef = useRef(trackEditing);
-
-  useEffect(() => {
-    trackEditingRef.current = trackEditing;
-  }, [trackEditing]);
-
-  useEffect(() => {
-    if (!livePointersEnabled) return;
-    const el = editorCanvasRef.current;
-    if (!el) return;
-    function onMouseMove(event: MouseEvent) {
-      const rect = editorCanvasRef.current!.getBoundingClientRect();
-      trackPointer(event.clientX - rect.left, event.clientY - rect.top);
-    }
-    el.addEventListener("mousemove", onMouseMove);
-    return () => el.removeEventListener("mousemove", onMouseMove);
-  }, [livePointersEnabled, trackPointer]);
+  const previewHtml = marked.parse(markdownText);
 
   const saveContent = useCallback(
     async (silent = false) => {
-      if (!editor || !doc) return;
+      if (!doc) return;
       if (!can(role, "edit")) {
         toast.error("You only have view access");
         return;
       }
-      const content = editor.getJSON() as AjaiaDocument["content"];
+      const content = { format: "markdown" as const, text: markdownText } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
       setSaveState("saving");
       try {
         const response = await fetch(`/api/documents/${doc.id}`, {
@@ -254,7 +112,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
         toast.error(error instanceof Error ? error.message : "Save failed");
       }
     },
-    [doc, editor, role],
+    [doc, role, markdownText],
   );
 
   useEffect(() => {
@@ -264,7 +122,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
   }, [editable, saveContent, saveState]);
 
   useEffect(() => {
-    if (!doc || !editor) return;
+    if (!doc) return;
     const id = window.setInterval(() => {
       if (saveStateRef.current !== "saved") return;
       fetch(`/api/documents/${doc.id}`)
@@ -272,19 +130,19 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
           const data = (await response.json()) as { document?: EditorDocument };
           if (!response.ok || !data.document) return;
           if (Date.parse(data.document.updatedAt) <= Date.parse(updatedAtRef.current)) return;
-          applyingRemoteUpdateRef.current = true;
-          editor.commands.setContent(data.document.content, { emitUpdate: false });
-          applyingRemoteUpdateRef.current = false;
+          const contentObj = data.document.content;
+          const remoteText = contentObj && "format" in contentObj && contentObj.format === "markdown"
+            ? (contentObj as MarkdownDoc).text
+            : "";
+          setMarkdownText(remoteText);
           updatedAtRef.current = data.document.updatedAt;
           setDoc(data.document);
           setSaveState("saved");
         })
-        .catch(() => {
-          applyingRemoteUpdateRef.current = false;
-        });
+        .catch(() => {});
     }, 5000);
     return () => window.clearInterval(id);
-  }, [doc, editor]);
+  }, [doc]);
 
   if (!doc || !role) {
     return (
@@ -332,8 +190,8 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
   }
 
   function exportMarkdown() {
-    if (!editor || !doc) return;
-    const markdown = tiptapToMarkdown(editor.getJSON());
+    if (!doc) return;
+    const markdown = markdownText;
     const blob = new Blob([markdown || `# ${doc.title}\n`], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
@@ -344,7 +202,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
   }
 
   return (
-    <main className="min-h-dvh bg-zinc-100 dark:bg-zinc-950">
+    <main className="flex h-dvh flex-col bg-zinc-100 dark:bg-zinc-950">
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
           <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
@@ -369,7 +227,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
               <SaveStateBadge state={saveState} />
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <MembersStack members={doc?.members ?? []} />
+              <MembersStack members={doc?.members ?? []} activeUserIds={new Set()} />
               <Button variant="outline" onClick={() => (can(role, "share") ? setShareOpen(true) : toast.error("Only owners can share this document"))}>
                 <Share2 className="size-4" />
                 Share
@@ -412,24 +270,29 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
               </DropdownMenu>
             </div>
           </div>
-          <Toolbar editor={editor} disabled={!editable} className="justify-center" />
         </div>
       </header>
 
-      <section className="px-3 py-8 lg:px-8">
-        <div className={`flex gap-6 transition-all duration-300 ${previewOpen ? "" : "justify-center"}`}>
-          <div className={`relative transition-all duration-300 ease-out ${previewOpen ? "w-1/2 min-w-0" : `w-full ${pageWidthClass[doc.pageSize]}`}`}>
-            <div ref={editorCanvasRef} className="rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
-              <EditorContent editor={editor} />
-              <PointerOverlay pointers={remotePointers} />
+      <section className="flex min-h-0 flex-1 px-3 py-8 lg:px-8">
+        <div className={`flex min-h-0 flex-1 gap-6 transition-all duration-300 ${previewOpen ? "" : "justify-center"}`}>
+          <div className={`relative flex min-h-0 flex-1 flex-col transition-all duration-300 ease-out ${previewOpen ? "w-1/2 min-w-0" : `w-full ${pageWidthClass[doc.pageSize]}`}`}>
+            <div className="flex flex-1 flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
+              <textarea
+                className="min-h-0 flex-1 w-full resize-none bg-transparent font-mono text-sm leading-relaxed text-zinc-800 placeholder-zinc-400 outline-none dark:text-zinc-200"
+                value={markdownText}
+                onChange={(e) => { setMarkdownText(e.target.value); setSaveState("dirty"); }}
+                placeholder="Start writing Markdown..."
+                readOnly={!editable}
+              />
             </div>
           </div>
           {previewOpen ? (
             <div className="w-1/2 min-w-0" style={{ animation: "fadeIn 0.3s ease-out" }}>
               <div className="rounded-lg bg-zinc-50 p-8 shadow-sm dark:bg-zinc-900 md:p-12">
-                <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
-                  {previewMarkdown}
-                </pre>
+                <div
+                  className="prose prose-sm max-w-none dark:prose-invert"
+                  dangerouslySetInnerHTML={{ __html: previewHtml }}
+                />
               </div>
             </div>
           ) : null}
@@ -438,43 +301,6 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
 
       {shareOpen ? <ShareDialog doc={doc} onClose={() => setShareOpen(false)} onDocumentChange={setDoc} /> : null}
     </main>
-  );
-}
-
-function Toolbar({
-  editor,
-  disabled,
-  className,
-}: {
-  editor: Editor | null;
-  disabled: boolean;
-  className?: string;
-}) {
-  const buttons = [
-    { icon: Undo2, label: "Undo", run: () => editor?.chain().focus().undo().run(), active: false },
-    { icon: Redo2, label: "Redo", run: () => editor?.chain().focus().redo().run(), active: false },
-    { icon: null, label: "sep1", separator: true },
-    { icon: Bold, label: "Bold", run: () => editor?.chain().focus().toggleBold().run(), active: editor?.isActive("bold") },
-    { icon: Italic, label: "Italic", run: () => editor?.chain().focus().toggleItalic().run(), active: editor?.isActive("italic") },
-    { icon: UnderlineIcon, label: "Underline", run: () => editor?.chain().focus().toggleUnderline().run(), active: editor?.isActive("underline") },
-    { icon: Heading1, label: "H1", run: () => editor?.chain().focus().toggleHeading({ level: 1 }).run(), active: editor?.isActive("heading", { level: 1 }) },
-    { icon: Heading2, label: "H2", run: () => editor?.chain().focus().toggleHeading({ level: 2 }).run(), active: editor?.isActive("heading", { level: 2 }) },
-    { icon: Heading3, label: "H3", run: () => editor?.chain().focus().toggleHeading({ level: 3 }).run(), active: editor?.isActive("heading", { level: 3 }) },
-    { icon: List, label: "Bullets", run: () => editor?.chain().focus().toggleBulletList().run(), active: editor?.isActive("bulletList") },
-    { icon: ListOrdered, label: "Numbers", run: () => editor?.chain().focus().toggleOrderedList().run(), active: editor?.isActive("orderedList") },
-  ];
-  return (
-    <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}>
-      {buttons.map((item) =>
-        item.separator ? (
-          <div key={item.label} className="h-5 w-px bg-zinc-300 dark:bg-zinc-700" />
-        ) : (
-          <Button key={item.label} type="button" variant={item.active ? "secondary" : "ghost"} size="icon" disabled={disabled || !editor} title={item.label} onClick={item.run}>
-            {item.icon ? <item.icon className="size-4" /> : null}
-          </Button>
-        )
-      )}
-    </div>
   );
 }
 
@@ -653,7 +479,7 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
   );
 }
 
-function MembersStack({ members }: { members: DocumentMember[] }) {
+function MembersStack({ members, activeUserIds }: { members: DocumentMember[]; activeUserIds: Set<string> }) {
   const max = 3;
   const visible = members.slice(0, max);
   const overflow = members.length - max;
@@ -663,8 +489,11 @@ function MembersStack({ members }: { members: DocumentMember[] }) {
       <DialogTrigger asChild>
         <button type="button" className="flex cursor-pointer items-center -space-x-2 hover:opacity-80">
           {visible.map((member) => (
-            <div key={member.userId} className="rounded-full border-2 border-white dark:border-zinc-950">
+            <div key={member.userId} className="relative rounded-full border-2 border-white dark:border-zinc-950">
               <Avatar name={member.name} />
+              {activeUserIds.has(member.userId) ? (
+                <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white bg-emerald-500 dark:border-zinc-950" />
+              ) : null}
             </div>
           ))}
           {overflow > 0 ? (
@@ -683,10 +512,9 @@ function MembersStack({ members }: { members: DocumentMember[] }) {
             <div key={member.userId} className="flex items-center gap-3 py-2.5">
               <div className="relative shrink-0">
                 <Avatar name={member.name} />
-                <span
-                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white dark:border-zinc-950"
-                  style={{ backgroundColor: getColor(member.userId) }}
-                />
+                {activeUserIds.has(member.userId) ? (
+                  <span className="absolute -bottom-0.5 -right-0.5 size-3 rounded-full border-2 border-white bg-emerald-500 dark:border-zinc-950" />
+                ) : null}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium">{member.name}</p>

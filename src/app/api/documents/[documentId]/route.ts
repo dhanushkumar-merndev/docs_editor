@@ -10,8 +10,8 @@ import {
   updatePageSizeForUser,
 } from "@/lib/document-service";
 import { requireCurrentUser } from "@/lib/session";
-import { emailSchema, pageSizeSchema, shareRoleSchema, tiptapDocSchema, titleSchema } from "@/lib/validation";
-import type { TiptapDoc } from "@/lib/types";
+import { emailSchema, pageSizeSchema, shareRoleSchema, tiptapDocSchema, markdownContentSchema, titleSchema } from "@/lib/validation";
+import type { TiptapDoc, MarkdownDoc } from "@/lib/types";
 
 export async function GET(_request: Request, context: { params: Promise<{ documentId: string }> }) {
   const actor = await requireCurrentUser();
@@ -26,7 +26,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   const { documentId } = await context.params;
   const body = (await request.json()) as {
     action: "save" | "rename" | "pageSize" | "pageCount" | "shareEmail" | "leave";
-    content?: TiptapDoc;
+    content?: TiptapDoc | MarkdownDoc;
     title?: string;
     pageSize?: string;
     pageCount?: number;
@@ -35,9 +35,13 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   };
 
   if (body.action === "save") {
-    const parsed = tiptapDocSchema.safeParse(body.content);
+    if (!body.content) return NextResponse.json({ error: "Missing content" }, { status: 400 });
+    const isMarkdown = "format" in body.content && body.content.format === "markdown";
+    const parsed = isMarkdown
+      ? markdownContentSchema.safeParse(body.content)
+      : tiptapDocSchema.safeParse(body.content);
     if (!parsed.success) return NextResponse.json({ error: "Invalid document content" }, { status: 400 });
-    const result = await saveDocumentContent(documentId, actor, parsed.data as TiptapDoc);
+    const result = await saveDocumentContent(documentId, actor, parsed.data as TiptapDoc | MarkdownDoc);
     return NextResponse.json(result, { status: result.ok ? 200 : 403 });
   }
 

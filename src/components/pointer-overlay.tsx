@@ -13,19 +13,21 @@ export function PointerOverlay({ pointers }: { pointers: Map<string, RemotePoint
           className="pointer-events-none absolute"
           style={{ left: ptr.x, top: ptr.y }}
         >
-          <svg width="16" height="20" viewBox="0 0 16 20" className="drop-shadow-md">
-            <path d="M2 0L14 12H9L11 18L5 14L0 16L2 0Z" fill={ptr.color} />
-          </svg>
           <div
-            className="absolute left-4 top-0 whitespace-nowrap rounded-md px-2 py-0.5 text-xs font-medium text-white shadow-sm"
+            className="absolute -left-px h-5 w-0.5 animate-pulse rounded-sm"
+            style={{ backgroundColor: ptr.color }}
+          />
+          <div
+            className="absolute -left-0.5 -top-5 whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px] font-medium text-white shadow-sm"
             style={{ backgroundColor: ptr.color }}
           >
             {ptr.name}
           </div>
           {ptr.editing ? (
-            <div className="absolute -left-0.5 top-4">
-              <span className="inline-block size-1.5 animate-pulse rounded-full bg-white shadow-sm" style={{ backgroundColor: ptr.color }} />
-            </div>
+            <div
+              className="absolute -left-0.5 top-5 size-1.5 animate-ping rounded-full shadow-sm"
+              style={{ backgroundColor: ptr.color }}
+            />
           ) : null}
         </div>
       ))}
