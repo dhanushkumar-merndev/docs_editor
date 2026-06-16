@@ -3,7 +3,7 @@
 import Link from "next/link";
 import type { JSONContent } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Edit3, FilePlus2, FileText, Loader2, LogOut, MoreVertical, Search, Share2, Trash2, Upload, UserMinus } from "lucide-react";
+import { ChevronRight, Edit3, FilePlus2, FileText, Loader2, LogOut, MoreVertical, Search, Share2, Trash2, Upload, UserMinus } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -346,6 +346,7 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
           <Input className="pl-9" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search documents..." />
         </div>
+        <hr className="mt-4 border-t border-zinc-200 dark:border-zinc-800" />
 
         <nav className="mt-6 space-y-6 overflow-y-auto pr-1">
           {query.trim().length < 2 ? (
@@ -370,10 +371,11 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
                   <Link
                     key={doc.id}
                     href={`/documents/${doc.id}`}
-                    className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
                   >
                     <FileText className="size-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+                    <ChevronRight className="size-3 shrink-0 text-zinc-400" />
                   </Link>
                 ))
               )}
@@ -493,11 +495,14 @@ function SidebarGroup({
       <button
         type="button"
         className={`block w-full rounded-lg px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide transition ${
-          activeView === view ? "bg-zinc-200 text-zinc-950 shadow-sm dark:bg-zinc-800 dark:text-zinc-50" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-50"
+          activeView === view ? "bg-zinc-950 text-white shadow-sm dark:bg-white dark:text-zinc-950" : "text-zinc-500 hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800/50 dark:hover:text-zinc-50"
         }`}
         onClick={() => onView(view)}
       >
-        {title}
+        <span className="flex items-center justify-between">
+          <span>{title}</span>
+          <ChevronRight className={`size-3 transition ${activeView === view ? "opacity-100" : "opacity-0"}`} />
+        </span>
       </button>
       <div className="mt-2 space-y-1">
         {loading ? <SidebarSkeleton /> : null}
@@ -506,10 +511,11 @@ function SidebarGroup({
           <Link
             key={`${title}-${doc.id}`}
             href={`/documents/${doc.id}`}
-            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-300 dark:hover:bg-zinc-900 dark:hover:text-zinc-50"
+            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
           >
             <FileText className="size-4 shrink-0" />
             <span className="min-w-0 flex-1 truncate">{doc.title}</span>
+            <ChevronRight className="size-3 shrink-0 text-zinc-400" />
           </Link>
         ))}
       </div>
@@ -566,13 +572,13 @@ function DocumentTable({
             <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{formatDate(doc.updatedAt, timeFormat, timeZone)}</p>
           </Link>
           <div className="flex flex-wrap items-center justify-end gap-6">
-            <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-50">
+            <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">
               <Edit3 className="size-4" />
               {doc.role === "viewer" ? "View" : "Edit"}
             </Link>
             {doc.role === "owner" ? (
               <>
-                <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-300 dark:hover:text-zinc-50">
+                <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">
                   <Share2 className="size-4" />
                   Share
                 </Link>
@@ -615,7 +621,7 @@ function ConfirmDialog({ pendingAction, loading, onCancel, onConfirm }: { pendin
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
       <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
         <h2 className="text-lg font-semibold">{isDelete ? "Delete document?" : "Leave shared document?"}</h2>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           {isDelete
             ? `This will permanently delete "${pendingAction.doc.title}" for everyone.`
             : `This will revoke your access to "${pendingAction.doc.title}".`}

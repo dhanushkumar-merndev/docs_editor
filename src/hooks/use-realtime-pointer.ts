@@ -28,6 +28,7 @@ export type RemotePointer = {
   color: string;
   x: number;
   y: number;
+  editing: boolean;
   lastSeen: number;
 };
 
@@ -48,7 +49,7 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
     });
 
     channel.on("broadcast", { event: "pointer" }, (payload) => {
-      const data = payload.payload as { userId: string; name: string; color: string; x: number; y: number };
+      const data = payload.payload as { userId: string; name: string; color: string; x: number; y: number; editing: boolean };
       if (data.userId === userId) return;
       setRemotePointers((prev) => {
         const next = new Map(prev);
@@ -84,7 +85,7 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
   }, []);
 
   const trackPointer = useCallback(
-    (x: number, y: number) => {
+    (x: number, y: number, editing?: boolean) => {
       const now = Date.now();
       if (now - sentRef.current < THROTTLE_MS) return;
       sentRef.current = now;
@@ -95,11 +96,31 @@ export function useRealtimePointer(documentId: string, userId: string, userName:
       channel.send({
         type: "broadcast",
         event: "pointer",
-        payload: { userId, name: userName, color: getColor(userId), x, y },
+        payload: { userId, name: userName, color: getColor(userId), x, y, editing: editing ?? false },
       });
     },
     [userId, userName],
   );
 
-  return { remotePointers, trackPointer };
+  const trackEditing = useCallback(
+    (editing: boolean) => {
+      if (!channelRef.current) return;
+      setRemotePointers((prev) => {
+        const next = new Map(prev);
+        const existing = next.get(userId);
+        if (existing) {
+          next.set(userId, { ...existing, editing });
+        }
+        return next;
+      });
+      channelRef.current.send({
+        type: "broadcast",
+        event: "pointer",
+        payload: { userId, name: userName, color: getColor(userId), x: 0, y: 0, editing },
+      });
+    },
+    [userId, userName],
+  );
+
+  return { remotePointers, trackPointer, trackEditing };
 }

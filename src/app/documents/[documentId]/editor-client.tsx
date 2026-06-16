@@ -59,7 +59,6 @@ import type { AjaiaDocument, DocumentMember, MemberRole } from "@/lib/types";
 import type { CurrentUser } from "@/lib/session";
 import { useRealtimePointer, getColor } from "@/hooks/use-realtime-pointer";
 import { PointerOverlay } from "@/components/pointer-overlay";
-import { marked } from "marked";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
@@ -155,6 +154,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
   const applyingRemoteUpdateRef = useRef(false);
   const saveStateRef = useRef<SaveState>("saved");
   const updatedAtRef = useRef(initialDocument?.updatedAt ?? "");
+  const editingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
 
@@ -175,7 +175,14 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
       editable,
       immediatelyRender: false,
       onUpdate: () => {
-        if (!applyingRemoteUpdateRef.current) setSaveState("dirty");
+        if (!applyingRemoteUpdateRef.current) {
+          setSaveState("dirty");
+          if (livePointersEnabled) {
+            trackEditingRef.current(true);
+            if (editingTimerRef.current) clearTimeout(editingTimerRef.current);
+            editingTimerRef.current = setTimeout(() => trackEditingRef.current(false), 2000);
+          }
+        }
       },
     },
     [doc?.id, editable],
@@ -189,26 +196,29 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
   }, [doc?.updatedAt]);
 
-  const previewHtml = editor && doc ? marked.parse(tiptapToMarkdown(editor.getJSON()), { async: false }) as string : "";
+  const previewMarkdown = editor && doc ? tiptapToMarkdown(editor.getJSON()) : "";
 
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editor, editable]);
 
   const livePointersEnabled = doc?.members && doc.members.length > 1;
-  const editorSectionRef = useRef<HTMLDivElement>(null);
-  const { remotePointers, trackPointer } = useRealtimePointer(
+  const editorCanvasRef = useRef<HTMLDivElement>(null);
+  const { remotePointers, trackPointer, trackEditing } = useRealtimePointer(
     doc?.id ?? "",
     user.id,
     user.name,
   );
+  const trackEditingRef = useRef(trackEditing);
+  trackEditingRef.current = trackEditing;
 
   useEffect(() => {
     if (!livePointersEnabled) return;
-    const el = editorSectionRef.current;
+    const el = editorCanvasRef.current;
     if (!el) return;
     function onMouseMove(event: MouseEvent) {
-      trackPointer(event.clientX, event.clientY);
+      const rect = editorCanvasRef.current!.getBoundingClientRect();
+      trackPointer(event.clientX - rect.left, event.clientY - rect.top);
     }
     el.addEventListener("mousemove", onMouseMove);
     return () => el.removeEventListener("mousemove", onMouseMove);
@@ -403,17 +413,20 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
         </div>
       </header>
 
-      <section ref={editorSectionRef} className="px-3 py-8 lg:px-8">
+      <section className="px-3 py-8 lg:px-8">
         <div className={`flex gap-6 transition-all duration-300 ${previewOpen ? "" : "justify-center"}`}>
-          <div className={`transition-all duration-300 ease-out ${previewOpen ? "w-1/2 min-w-0" : `w-full ${pageWidthClass[doc.pageSize]}`}`}>
-            <div className="rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
+          <div className={`relative transition-all duration-300 ease-out ${previewOpen ? "w-1/2 min-w-0" : `w-full ${pageWidthClass[doc.pageSize]}`}`}>
+            <div ref={editorCanvasRef} className="rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
               <EditorContent editor={editor} />
+              <PointerOverlay pointers={remotePointers} />
             </div>
           </div>
           {previewOpen ? (
             <div className="w-1/2 min-w-0" style={{ animation: "fadeIn 0.3s ease-out" }}>
-              <div className="markdown-preview rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
-                <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              <div className="rounded-lg bg-zinc-50 p-8 shadow-sm dark:bg-zinc-900 md:p-12">
+                <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-sm leading-relaxed text-zinc-800 dark:text-zinc-200">
+                  {previewMarkdown}
+                </pre>
               </div>
             </div>
           ) : null}
@@ -421,7 +434,6 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
       </section>
 
       {shareOpen ? <ShareDialog doc={doc} onClose={() => setShareOpen(false)} onDocumentChange={setDoc} /> : null}
-      <PointerOverlay pointers={remotePointers} containerRef={editorSectionRef} />
     </main>
   );
 }

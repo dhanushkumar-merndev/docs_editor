@@ -2,15 +2,15 @@
 
 import type { RemotePointer } from "@/hooks/use-realtime-pointer";
 
-export function PointerOverlay({ pointers, containerRef }: { pointers: Map<string, RemotePointer>; containerRef: React.RefObject<HTMLDivElement | null> }) {
+export function PointerOverlay({ pointers }: { pointers: Map<string, RemotePointer> }) {
   if (pointers.size === 0) return null;
 
   return (
-    <div className="pointer-events-none fixed inset-0 z-50">
+    <>
       {Array.from(pointers.values()).map((ptr) => (
         <div
           key={ptr.userId}
-          className="absolute transition-[left,top] duration-75 ease-linear"
+          className="pointer-events-none absolute"
           style={{ left: ptr.x, top: ptr.y }}
         >
           <svg width="16" height="20" viewBox="0 0 16 20" className="drop-shadow-md">
@@ -22,8 +22,13 @@ export function PointerOverlay({ pointers, containerRef }: { pointers: Map<strin
           >
             {ptr.name}
           </div>
+          {ptr.editing ? (
+            <div className="absolute -left-0.5 top-4">
+              <span className="inline-block size-1.5 animate-pulse rounded-full bg-white shadow-sm" style={{ backgroundColor: ptr.color }} />
+            </div>
+          ) : null}
         </div>
       ))}
-    </div>
+    </>
   );
 }
