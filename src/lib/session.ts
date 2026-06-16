@@ -10,9 +10,11 @@ export type CurrentUser = {
 };
 
 export async function getCurrentUser(): Promise<CurrentUser | null> {
-  const session = await auth.api.getSession({
-    headers: await headers(),
-  });
+  const session = await auth.api
+    .getSession({
+      headers: await headers(),
+    })
+    .catch(() => null);
   if (!session?.user) return null;
   return {
     id: session.user.id,

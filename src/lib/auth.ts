@@ -6,7 +6,7 @@ const googleClientId = process.env.GOOGLE_CLIENT_ID;
 const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET;
 
 export const auth = betterAuth({
-  secret: process.env.BETTER_AUTH_SECRET ?? "ajaia-docs-local-demo-secret-change-me",
+  secret: process.env.BETTER_AUTH_SECRET ?? "ajaia-docs-local-secret-change-me",
   baseURL: process.env.BETTER_AUTH_URL ?? process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000",
   database: drizzleAdapter(db, {
     provider: "pg",

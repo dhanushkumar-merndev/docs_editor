@@ -19,6 +19,9 @@ export type DocumentSummary = {
   ownerEmail: string;
   role: MemberRole;
   pageSize: PageSize;
+  pageCount: number;
+  createdAt: string;
+  sharedAt: string;
   updatedAt: string;
 };
 
@@ -55,7 +58,10 @@ export async function listAccessibleDocuments(actor: CurrentUser): Promise<Docum
       title: documents.title,
       ownerId: documents.ownerId,
       pageSize: documents.pageSize,
+      pageCount: documents.pageCount,
+      createdAt: documents.createdAt,
       updatedAt: documents.updatedAt,
+      sharedAt: documentMembers.createdAt,
       role: documentMembers.role,
       ownerName: authUser.name,
       ownerEmail: authUser.email,
@@ -74,11 +80,14 @@ export async function listAccessibleDocuments(actor: CurrentUser): Promise<Docum
     ownerEmail: row.ownerEmail,
     role: normalizeRole(row.role),
     pageSize: normalizePageSize(row.pageSize),
+    pageCount: Math.max(1, row.pageCount),
+    createdAt: toIso(row.createdAt),
+    sharedAt: toIso(row.sharedAt),
     updatedAt: toIso(row.updatedAt),
   }));
 }
 
-export async function createDocumentForUser(actor: CurrentUser, title = "Untitled Document", content: TiptapDoc = emptyDoc) {
+export async function createDocumentForUser(actor: CurrentUser, title = "Untitled Document", content: TiptapDoc = emptyDoc, imported = false) {
   const [doc] = await db
     .insert(documents)
     .values({
@@ -86,6 +95,7 @@ export async function createDocumentForUser(actor: CurrentUser, title = "Untitle
       content,
       ownerId: actor.id,
       pageSize: "a4",
+      pageCount: 1,
     })
     .returning();
 
@@ -94,7 +104,7 @@ export async function createDocumentForUser(actor: CurrentUser, title = "Untitle
     userId: actor.id,
     role: "owner",
   });
-  await logActivity("document.created", doc.id, actor, { title });
+  await logActivity(imported ? "document.imported" : "document.created", doc.id, actor, { title });
   return doc.id;
 }
 
@@ -126,6 +136,7 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
     ownerName: owner?.name ?? "Owner",
     ownerEmail: owner?.email ?? "",
     pageSize: normalizePageSize(doc.pageSize),
+    pageCount: Math.max(1, doc.pageCount),
     createdAt: toIso(doc.createdAt),
     updatedAt: toIso(doc.updatedAt),
     members: members.map(
@@ -143,9 +154,10 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
 export async function saveDocumentContent(documentId: string, actor: CurrentUser, content: TiptapDoc) {
   const doc = await getDocumentForUser(documentId, actor);
   if (!doc || !can(doc.role, "edit")) return { ok: false, error: "No edit access" };
-  await db.update(documents).set({ content, updatedAt: new Date() }).where(eq(documents.id, documentId));
+  const updatedAt = new Date();
+  await db.update(documents).set({ content, updatedAt }).where(eq(documents.id, documentId));
   await logActivity("document.saved", documentId, actor);
-  return { ok: true, error: null };
+  return { ok: true, error: null, updatedAt: updatedAt.toISOString() };
 }
 
 export async function renameDocumentForUser(documentId: string, actor: CurrentUser, title: string) {
@@ -161,6 +173,32 @@ export async function updatePageSizeForUser(documentId: string, actor: CurrentUs
   if (!doc || !can(doc.role, "edit")) return { ok: false, error: "No edit access" };
   await db.update(documents).set({ pageSize, updatedAt: new Date() }).where(eq(documents.id, documentId));
   await logActivity("document.page_size_changed", documentId, actor, { pageSize });
+  return { ok: true, error: null };
+}
+
+export async function updatePageCountForUser(documentId: string, actor: CurrentUser, pageCount: number) {
+  const doc = await getDocumentForUser(documentId, actor);
+  if (!doc || !can(doc.role, "edit")) return { ok: false, error: "No edit access" };
+  const nextPageCount = Math.max(1, Math.min(20, pageCount));
+  await db.update(documents).set({ pageCount: nextPageCount, updatedAt: new Date() }).where(eq(documents.id, documentId));
+  await logActivity("document.page_count_changed", documentId, actor, { from: doc.pageCount, to: nextPageCount });
+  return { ok: true, error: null, pageCount: nextPageCount };
+}
+
+export async function deleteDocumentForOwner(documentId: string, actor: CurrentUser) {
+  const doc = await getDocumentForUser(documentId, actor);
+  if (!doc || !can(doc.role, "delete")) return { ok: false, error: "Only owners can delete this document" };
+  await logActivity("document.deleted", documentId, actor, { title: doc.title });
+  await db.delete(documents).where(eq(documents.id, documentId));
+  return { ok: true, error: null };
+}
+
+export async function leaveSharedDocument(documentId: string, actor: CurrentUser) {
+  const doc = await getDocumentForUser(documentId, actor);
+  if (!doc) return { ok: false, error: "Document not found" };
+  if (doc.role === "owner") return { ok: false, error: "Owners cannot leave their own document" };
+  await logActivity("member.left", documentId, actor, { title: doc.title, role: doc.role });
+  await db.delete(documentMembers).where(and(eq(documentMembers.documentId, documentId), eq(documentMembers.userId, actor.id)));
   return { ok: true, error: null };
 }
 
@@ -216,7 +254,10 @@ export async function searchDocumentsForUser(actor: CurrentUser, query: string):
       title: documents.title,
       ownerId: documents.ownerId,
       pageSize: documents.pageSize,
+      pageCount: documents.pageCount,
+      createdAt: documents.createdAt,
       updatedAt: documents.updatedAt,
+      sharedAt: documentMembers.createdAt,
       role: documentMembers.role,
       ownerName: authUser.name,
       ownerEmail: authUser.email,
@@ -235,6 +276,9 @@ export async function searchDocumentsForUser(actor: CurrentUser, query: string):
     ownerEmail: row.ownerEmail,
     role: normalizeRole(row.role),
     pageSize: normalizePageSize(row.pageSize),
+    pageCount: Math.max(1, row.pageCount),
+    createdAt: toIso(row.createdAt),
+    sharedAt: toIso(row.sharedAt),
     updatedAt: toIso(row.updatedAt),
   }));
 }

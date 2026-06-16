@@ -56,6 +56,7 @@ export const documents = pgTable("documents", {
   content: jsonb("content").notNull(),
   ownerId: text("owner_id").notNull(),
   pageSize: text("page_size").notNull().default("a4"),
+  pageCount: integer("page_count").notNull().default(1),
   createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
@@ -87,6 +88,8 @@ export const userProfiles = pgTable("user_profiles", {
   userId: text("user_id").primaryKey(),
   displayName: text("display_name"),
   avatarUrl: text("avatar_url"),
+  timeFormat: text("time_format").notNull().default("12h"),
+  timeZone: text("time_zone").notNull().default("Asia/Kolkata"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
 });
 

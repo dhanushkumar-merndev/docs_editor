@@ -1,14 +1,19 @@
-import * as React from "react";
-import { cn } from "@/lib/utils";
+import * as React from "react"
 
-export function Input({ className, ...props }: React.InputHTMLAttributes<HTMLInputElement>) {
+import { cn } from "@/lib/utils"
+
+function Input({ className, type, ...props }: React.ComponentProps<"input">) {
   return (
     <input
+      type={type}
+      data-slot="input"
       className={cn(
-        "h-10 w-full rounded-md border border-zinc-200 bg-white px-3 text-sm text-zinc-950 outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:focus:border-zinc-600 dark:focus:ring-zinc-800",
-        className,
+        "h-8 w-full min-w-0 rounded-lg border border-input bg-transparent px-2.5 py-1 text-base transition-colors outline-none file:inline-flex file:h-6 file:border-0 file:bg-transparent file:text-sm file:font-medium file:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:pointer-events-none disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 md:text-sm dark:bg-input/30 dark:disabled:bg-input/80 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40",
+        className
       )}
       {...props}
     />
-  );
+  )
 }
+
+export { Input }

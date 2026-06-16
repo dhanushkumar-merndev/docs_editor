@@ -11,20 +11,23 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeft,
   Bold,
+  ChevronDown,
   Check,
+  Download,
   Heading1,
   Heading2,
+  Heading3,
   ImagePlus,
   Italic,
   List,
   ListOrdered,
-  MousePointer2,
-  Save,
+  Plus,
   Share2,
+  Trash2,
   UnderlineIcon,
 } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -45,11 +48,38 @@ const pageStyles: Record<PageSize, string> = {
   custom: "max-w-[920px]",
 };
 
+const pageLabels: Record<PageSize, string> = {
+  a4: "A4",
+  letter: "Letter",
+  custom: "Custom",
+};
+
+const pageHeights: Record<PageSize, number> = {
+  a4: 1123,
+  letter: 1056,
+  custom: 980,
+};
+
 function countImages(content: JSONContent | JSONContent[] | undefined): number {
   if (!content) return 0;
   if (Array.isArray(content)) return content.reduce((total, node) => total + countImages(node), 0);
   const current = content.type === "image" ? 1 : 0;
   return current + countImages(content.content);
+}
+
+function plainText(nodes: JSONContent[] | undefined): string {
+  return (nodes ?? []).map((node) => node.text ?? plainText(node.content)).join("");
+}
+
+function tiptapToMarkdown(node: JSONContent | undefined): string {
+  if (!node) return "";
+  if (node.type === "doc") return (node.content ?? []).map(tiptapToMarkdown).join("\n\n").trim();
+  if (node.type === "paragraph") return plainText(node.content);
+  if (node.type === "heading") return `${"#".repeat(Number(node.attrs?.level ?? 1))} ${plainText(node.content)}`;
+  if (node.type === "bulletList") return (node.content ?? []).map((item) => `- ${plainText(item.content?.[0]?.content)}`).join("\n");
+  if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${plainText(item.content?.[0]?.content)}`).join("\n");
+  if (node.type === "image") return `![${String(node.attrs?.alt ?? "image")}](${String(node.attrs?.src ?? "")})`;
+  return plainText(node.content);
 }
 
 async function imageFileToDataUrl(file: File) {
@@ -61,13 +91,16 @@ async function imageFileToDataUrl(file: File) {
   });
 }
 
-export function EditorClient({ documentId, initialDocument }: { documentId: string; initialDocument: EditorDocument | null }) {
+export function EditorClient({ initialDocument }: { initialDocument: EditorDocument | null }) {
   const [doc, setDoc] = useState<EditorDocument | null>(initialDocument);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [titleDraft, setTitleDraft] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
-  const [remotePointers, setRemotePointers] = useState<Record<string, { name: string; x: number; y: number; color: string }>>({});
-  const lastPointer = useRef(0);
+  const [pageSizeOpen, setPageSizeOpen] = useState(false);
+  const [deletePageOpen, setDeletePageOpen] = useState(false);
+  const applyingRemoteUpdateRef = useRef(false);
+  const saveStateRef = useRef<SaveState>("saved");
+  const updatedAtRef = useRef(initialDocument?.updatedAt ?? "");
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
 
@@ -75,23 +108,6 @@ export function EditorClient({ documentId, initialDocument }: { documentId: stri
     const id = window.setTimeout(() => setTitleDraft(doc?.title ?? ""), 0);
     return () => window.clearTimeout(id);
   }, [doc?.title]);
-
-  useEffect(() => {
-    const handler = (event: StorageEvent) => {
-      if (event.key !== `ajaia-pointer-${documentId}` || !event.newValue) return;
-      const pointer = JSON.parse(event.newValue) as { userId: string; name: string; x: number; y: number; color: string };
-      setRemotePointers((current) => ({ ...current, [pointer.userId]: pointer }));
-      window.setTimeout(() => {
-        setRemotePointers((current) => {
-          const copy = { ...current };
-          delete copy[pointer.userId];
-          return copy;
-        });
-      }, 2000);
-    };
-    window.addEventListener("storage", handler);
-    return () => window.removeEventListener("storage", handler);
-  }, [documentId]);
 
   const editor = useEditor(
     {
@@ -105,10 +121,20 @@ export function EditorClient({ documentId, initialDocument }: { documentId: stri
       content: doc?.content,
       editable,
       immediatelyRender: false,
-      onUpdate: () => setSaveState("dirty"),
+      onUpdate: () => {
+        if (!applyingRemoteUpdateRef.current) setSaveState("dirty");
+      },
     },
     [doc?.id, editable],
   );
+
+  useEffect(() => {
+    saveStateRef.current = saveState;
+  }, [saveState]);
+
+  useEffect(() => {
+    if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
+  }, [doc?.updatedAt]);
 
   useEffect(() => {
     editor?.setEditable(editable);
@@ -116,43 +142,77 @@ export function EditorClient({ documentId, initialDocument }: { documentId: stri
 
   const activeMembers = doc?.members.slice(0, 4) ?? [];
 
+  const saveContent = useCallback(
+    async (silent = false) => {
+      if (!editor || !doc) return;
+      if (!can(role, "edit")) {
+        toast.error("You only have view access");
+        return;
+      }
+      const content = editor.getJSON() as AjaiaDocument["content"];
+      setSaveState("saving");
+      try {
+        const response = await fetch(`/api/documents/${doc.id}`, {
+          method: "PATCH",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ action: "save", content }),
+        });
+        const data = (await response.json()) as { error?: string; updatedAt?: string };
+        if (!response.ok) throw new Error(data.error ?? "Save failed");
+        const nextUpdatedAt = data.updatedAt ?? new Date().toISOString();
+        updatedAtRef.current = nextUpdatedAt;
+        setDoc((current) => (current ? { ...current, content, updatedAt: nextUpdatedAt } : current));
+        setSaveState("saved");
+        if (!silent) toast.success("Document saved");
+      } catch (error) {
+        setSaveState("error");
+        toast.error(error instanceof Error ? error.message : "Save failed");
+      }
+    },
+    [doc, editor, role],
+  );
+
+  useEffect(() => {
+    if (!editable || saveState !== "dirty") return;
+    const id = window.setTimeout(() => void saveContent(true), 1200);
+    return () => window.clearTimeout(id);
+  }, [editable, saveContent, saveState]);
+
+  useEffect(() => {
+    if (!doc || !editor) return;
+    const id = window.setInterval(() => {
+      if (saveStateRef.current !== "saved") return;
+      fetch(`/api/documents/${doc.id}`)
+        .then(async (response) => {
+          const data = (await response.json()) as { document?: EditorDocument };
+          if (!response.ok || !data.document) return;
+          if (Date.parse(data.document.updatedAt) <= Date.parse(updatedAtRef.current)) return;
+          applyingRemoteUpdateRef.current = true;
+          editor.commands.setContent(data.document.content, { emitUpdate: false });
+          applyingRemoteUpdateRef.current = false;
+          updatedAtRef.current = data.document.updatedAt;
+          setDoc(data.document);
+          setSaveState("saved");
+        })
+        .catch(() => {
+          applyingRemoteUpdateRef.current = false;
+        });
+    }, 5000);
+    return () => window.clearInterval(id);
+  }, [doc, editor]);
+
   if (!doc || !role) {
     return (
       <main className="grid min-h-dvh place-items-center p-6">
         <div className="max-w-md text-center">
           <h1 className="text-2xl font-semibold">Document not found</h1>
-          <p className="mt-2 text-zinc-500">It may not exist, or your current demo user does not have access.</p>
+          <p className="mt-2 text-zinc-500">It may not exist, or your account does not have access.</p>
           <Link className="mt-5 inline-flex" href="/dashboard">
             <Button>Back to dashboard</Button>
           </Link>
         </div>
       </main>
     );
-  }
-
-  function saveContent() {
-    if (!editor || !doc) return;
-    if (!can(role, "edit")) {
-      toast.error("You only have view access");
-      return;
-    }
-    setSaveState("saving");
-    fetch(`/api/documents/${doc.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "save", content: editor.getJSON() }),
-    })
-      .then(async (response) => {
-        const data = (await response.json()) as { error?: string };
-        if (!response.ok) throw new Error(data.error ?? "Save failed");
-        setDoc((current) => (current ? { ...current, content: editor.getJSON() as AjaiaDocument["content"], updatedAt: new Date().toISOString() } : current));
-        setSaveState("saved");
-        toast.success("Document saved");
-      })
-      .catch((error: Error) => {
-        setSaveState("error");
-        toast.error(error.message);
-      });
   }
 
   function rename() {
@@ -220,31 +280,31 @@ export function EditorClient({ documentId, initialDocument }: { documentId: stri
     });
   }
 
-  function broadcastPointer(event: React.MouseEvent<HTMLElement>) {
-    const timestamp = event.timeStamp;
-    if (timestamp - lastPointer.current < 100) return;
-    lastPointer.current = timestamp;
-    localStorage.setItem(
-      `ajaia-pointer-${documentId}`,
-      JSON.stringify({
-        documentId,
-        userId: "current",
-        name: "Collaborator",
-        color: "#2563eb",
-        x: event.clientX,
-        y: event.clientY,
-      }),
-    );
+  function updatePageCount(pageCount: number) {
+    if (!doc) return;
+    const nextPageCount = Math.max(1, Math.min(20, pageCount));
+    setDoc({ ...doc, pageCount: nextPageCount });
+    void fetch(`/api/documents/${doc.id}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ action: "pageCount", pageCount: nextPageCount }),
+    });
+  }
+
+  function exportMarkdown() {
+    if (!editor || !doc) return;
+    const markdown = tiptapToMarkdown(editor.getJSON());
+    const blob = new Blob([markdown || `# ${doc.title}\n`], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = `${doc.title.replace(/[^\w\s-]/g, "").trim().replace(/\s+/g, "-").toLowerCase() || "ajaia-document"}.md`;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   return (
-    <main className="min-h-dvh bg-zinc-100 dark:bg-zinc-950" onMouseMove={broadcastPointer}>
-      {Object.entries(remotePointers).map(([id, pointer]) => (
-        <div key={id} className="pointer-events-none fixed z-50" style={{ left: pointer.x, top: pointer.y }}>
-          <MousePointer2 className="size-5" style={{ color: pointer.color }} />
-          <span className="ml-4 rounded bg-zinc-950 px-2 py-0.5 text-xs font-semibold text-white">{pointer.name}</span>
-        </div>
-      ))}
+    <main className="min-h-dvh bg-zinc-100 dark:bg-zinc-950">
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
           <div className="flex flex-wrap items-center gap-2">
@@ -274,11 +334,7 @@ export function EditorClient({ documentId, initialDocument }: { documentId: stri
                   </div>
                 ))}
               </div>
-              <Button variant="outline" onClick={saveContent} disabled={!editable || saveState === "saving"}>
-                <Save className="size-4" />
-                Save
-              </Button>
-              <label className="inline-flex h-10 cursor-pointer items-center justify-center gap-2 rounded-md border border-zinc-200 bg-white px-4 text-sm font-medium text-zinc-900 transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-50 dark:hover:bg-zinc-900">
+              <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium whitespace-nowrap transition-all hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50">
                 <ImagePlus className="size-4" />
                 Upload image
                 <input className="sr-only" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={(event) => uploadImage(event.target.files?.[0])} disabled={!can(role, "uploadImage")} />
@@ -287,21 +343,81 @@ export function EditorClient({ documentId, initialDocument }: { documentId: stri
                 <Share2 className="size-4" />
                 Share
               </Button>
+              <Button variant="outline" onClick={exportMarkdown}>
+                <Download className="size-4" />
+                Export
+              </Button>
               <ThemeToggle />
             </div>
           </div>
-          <Toolbar editor={editor} disabled={!editable} pageSize={doc.pageSize} onPageSize={updatePageSize} />
+          <Toolbar editor={editor} disabled={!editable} pageSize={doc.pageSize} pageSizeOpen={pageSizeOpen} onPageSizeOpen={setPageSizeOpen} onPageSize={updatePageSize} />
         </div>
       </header>
 
       <section className="px-3 py-8 lg:px-8">
-        <div className={`mx-auto min-h-[900px] ${pageStyles[doc.pageSize]} bg-white p-8 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800 md:p-12`}>
-          <EditorContent editor={editor} />
+        <div className="space-y-6">
+          {Array.from({ length: doc.pageCount }).map((_, index) => (
+            <div
+              key={index}
+              className={`relative mx-auto ${pageStyles[doc.pageSize]} bg-white p-8 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800 md:p-12`}
+              style={{ minHeight: pageHeights[doc.pageSize] }}
+            >
+              <div className="absolute bottom-4 right-5 text-xs text-zinc-400">Page {index + 1}</div>
+              {index === 0 ? <EditorContent editor={editor} /> : <div className="grid min-h-[820px] place-items-center text-sm text-zinc-300">Manual visual page</div>}
+            </div>
+          ))}
         </div>
+        <PageControls
+          disabled={!editable}
+          pageCount={doc.pageCount}
+          onAdd={() => updatePageCount(doc.pageCount + 1)}
+          onAskDelete={() => setDeletePageOpen(true)}
+        />
       </section>
 
       {shareOpen ? <ShareDialog doc={doc} onClose={() => setShareOpen(false)} onDocumentChange={setDoc} /> : null}
+      {deletePageOpen ? (
+        <DeletePageDialog
+          onCancel={() => setDeletePageOpen(false)}
+          onDelete={() => {
+            updatePageCount(doc.pageCount - 1);
+            setDeletePageOpen(false);
+          }}
+        />
+      ) : null}
     </main>
+  );
+}
+
+function PageControls({ disabled, pageCount, onAdd, onAskDelete }: { disabled: boolean; pageCount: number; onAdd: () => void; onAskDelete: () => void }) {
+  return (
+    <div className="mx-auto mt-5 flex max-w-[794px] items-center justify-center gap-2">
+      <Button variant="outline" onClick={onAdd} disabled={disabled || pageCount >= 20}>
+        <Plus className="size-4" />
+        Add page
+      </Button>
+      {pageCount > 1 ? (
+        <Button variant="danger" onClick={onAskDelete} disabled={disabled}>
+          <Trash2 className="size-4" />
+          Delete page
+        </Button>
+      ) : null}
+    </div>
+  );
+}
+
+function DeletePageDialog({ onCancel, onDelete }: { onCancel: () => void; onDelete: () => void }) {
+  return (
+    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
+      <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+        <h2 className="text-lg font-semibold">Delete last page?</h2>
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">This removes the last visual page from the layout. The document text stays in the saved editor content.</p>
+        <div className="mt-5 flex justify-end gap-2">
+          <Button variant="outline" onClick={onCancel}>Cancel</Button>
+          <Button variant="danger" onClick={onDelete}>Delete page</Button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -309,11 +425,15 @@ function Toolbar({
   editor,
   disabled,
   pageSize,
+  pageSizeOpen,
+  onPageSizeOpen,
   onPageSize,
 }: {
   editor: Editor | null;
   disabled: boolean;
   pageSize: PageSize;
+  pageSizeOpen: boolean;
+  onPageSizeOpen: (open: boolean) => void;
   onPageSize: (size: PageSize) => void;
 }) {
   const buttons = [
@@ -322,6 +442,7 @@ function Toolbar({
     { icon: UnderlineIcon, label: "Underline", run: () => editor?.chain().focus().toggleUnderline().run(), active: editor?.isActive("underline") },
     { icon: Heading1, label: "H1", run: () => editor?.chain().focus().toggleHeading({ level: 1 }).run(), active: editor?.isActive("heading", { level: 1 }) },
     { icon: Heading2, label: "H2", run: () => editor?.chain().focus().toggleHeading({ level: 2 }).run(), active: editor?.isActive("heading", { level: 2 }) },
+    { icon: Heading3, label: "H3", run: () => editor?.chain().focus().toggleHeading({ level: 3 }).run(), active: editor?.isActive("heading", { level: 3 }) },
     { icon: List, label: "Bullets", run: () => editor?.chain().focus().toggleBulletList().run(), active: editor?.isActive("bulletList") },
     { icon: ListOrdered, label: "Numbers", run: () => editor?.chain().focus().toggleOrderedList().run(), active: editor?.isActive("orderedList") },
   ];
@@ -332,15 +453,33 @@ function Toolbar({
           <item.icon className="size-4" />
         </Button>
       ))}
-      <select
-        className="h-9 rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-        value={pageSize}
-        onChange={(event) => onPageSize(event.target.value as PageSize)}
-      >
-        <option value="a4">A4</option>
-        <option value="letter">Letter</option>
-        <option value="custom">Custom</option>
-      </select>
+      <div className="relative">
+        <button
+          type="button"
+          className="inline-flex h-9 min-w-28 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
+          onClick={() => onPageSizeOpen(!pageSizeOpen)}
+        >
+          {pageLabels[pageSize]}
+          <ChevronDown className="size-4 text-zinc-400" />
+        </button>
+        {pageSizeOpen ? (
+          <div className="absolute left-0 top-10 z-50 w-36 overflow-hidden rounded-md border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
+            {(["a4", "letter", "custom"] as PageSize[]).map((size) => (
+              <button
+                key={size}
+                type="button"
+                className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900"
+                onClick={() => {
+                  onPageSize(size);
+                  onPageSizeOpen(false);
+                }}
+              >
+                {pageLabels[size]}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -408,7 +547,7 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_130px_auto]">
           <Input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="User email" />
-          <select className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950" value={role} onChange={(event) => setRole(event.target.value as Exclude<MemberRole, "owner">)}>
+          <select className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-800" value={role} onChange={(event) => setRole(event.target.value as Exclude<MemberRole, "owner">)}>
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
           </select>
@@ -422,7 +561,7 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
         </div>
         <div className="mt-5">
           <p className="mb-2 text-sm font-semibold">Current members</p>
-          <div className="divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
+          <div className="max-h-[168px] overflow-y-auto divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
             {doc.members.map((member) => (
               <div key={member.userId} className="flex items-center gap-3 p-3">
                 <Avatar name={member.name} />

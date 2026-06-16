@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server";
 import {
   createPublicEditorLink,
+  deleteDocumentForOwner,
   getDocumentForUser,
+  leaveSharedDocument,
   renameDocumentForUser,
   saveDocumentContent,
   shareDocumentByEmail,
+  updatePageCountForUser,
   updatePageSizeForUser,
 } from "@/lib/document-service";
 import { requireCurrentUser } from "@/lib/session";
@@ -23,10 +26,11 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   const actor = await requireCurrentUser();
   const { documentId } = await context.params;
   const body = (await request.json()) as {
-    action: "save" | "rename" | "pageSize" | "shareEmail" | "publicLink";
+    action: "save" | "rename" | "pageSize" | "pageCount" | "shareEmail" | "publicLink" | "leave";
     content?: TiptapDoc;
     title?: string;
     pageSize?: string;
+    pageCount?: number;
     email?: string;
     role?: string;
   };
@@ -52,6 +56,12 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     return NextResponse.json(result, { status: result.ok ? 200 : 403 });
   }
 
+  if (body.action === "pageCount") {
+    if (!Number.isInteger(body.pageCount) || body.pageCount < 1 || body.pageCount > 20) return NextResponse.json({ error: "Invalid page count" }, { status: 400 });
+    const result = await updatePageCountForUser(documentId, actor, body.pageCount);
+    return NextResponse.json(result, { status: result.ok ? 200 : 403 });
+  }
+
   if (body.action === "shareEmail") {
     const parsedEmail = emailSchema.safeParse(body.email);
     const parsedRole = shareRoleSchema.safeParse(body.role);
@@ -65,5 +75,17 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     return NextResponse.json(result, { status: result.ok ? 200 : 403 });
   }
 
+  if (body.action === "leave") {
+    const result = await leaveSharedDocument(documentId, actor);
+    return NextResponse.json(result, { status: result.ok ? 200 : 403 });
+  }
+
   return NextResponse.json({ error: "Unsupported action" }, { status: 400 });
+}
+
+export async function DELETE(_request: Request, context: { params: Promise<{ documentId: string }> }) {
+  const actor = await requireCurrentUser();
+  const { documentId } = await context.params;
+  const result = await deleteDocumentForOwner(documentId, actor);
+  return NextResponse.json(result, { status: result.ok ? 200 : 403 });
 }

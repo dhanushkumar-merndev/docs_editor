@@ -154,7 +154,7 @@ Use `login-04` shadcn block.
 Login options:
 
 - Google sign-in through Better Auth
-- Optional demo user mode if needed for reviewers
+- Google sign-in through Better Auth
 
 After login, redirect to:
 
@@ -1023,7 +1023,7 @@ Include:
 - How to run tests
 - How to test sharing
 - Live URL
-- Demo credentials if applicable
+- Test account notes if applicable
 - Known limitations
 
 ---
@@ -1066,7 +1066,7 @@ I used AI tools to accelerate planning, boilerplate generation, schema design, a
 
 The 3–5 minute video should show:
 
-1. Login with Google or demo user
+1. Login with Google
 2. Dashboard with document count
 3. Create new document
 4. Rename document

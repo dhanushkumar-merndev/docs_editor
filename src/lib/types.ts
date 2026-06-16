@@ -22,6 +22,7 @@ export type AjaiaDocument = {
   ownerName: string;
   ownerEmail: string;
   pageSize: PageSize;
+  pageCount: number;
   members: DocumentMember[];
   createdAt: string;
   updatedAt: string;
@@ -41,8 +42,10 @@ export type DocumentActivityAction =
   | "document.saved"
   | "document.deleted"
   | "document.page_size_changed"
+  | "document.page_count_changed"
   | "image.uploaded"
   | "member.shared"
+  | "member.left"
   | "share_link.created"
   | "share_link.opened"
   | "profile.updated";
