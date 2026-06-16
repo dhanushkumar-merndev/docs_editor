@@ -240,7 +240,9 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
           {query.trim().length < 2 ? (
             <>
               <SidebarGroup title="Documents" view="my" activeView={selectedView} onView={setSelectedView} docs={sidebarMyDocs} loading={loading} emptyText="No owned documents" />
+              <hr className="border-t border-zinc-200 dark:border-zinc-800" />
               <SidebarGroup title="Shared With Me" view="shared" activeView={selectedView} onView={setSelectedView} docs={sidebarSharedDocs} loading={loading} emptyText="No shared documents" />
+              <hr className="border-t border-zinc-200 dark:border-zinc-800" />
               <SidebarGroup title="Recent Documents" view="recent" activeView={selectedView} onView={setSelectedView} docs={recentDocs} loading={loading} emptyText="No recent documents" />
             </>
           ) : (
@@ -259,7 +261,7 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
                   <Link
                     key={doc.id}
                     href={`/documents/${doc.id}`}
-            className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+                    className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
                   >
                     <FileText className="size-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{doc.title}</span>
