@@ -13,6 +13,8 @@ export function EditorCanvas({
   markdownText,
   onCaretMove,
   onDirty,
+  onSelectionChange,
+  previewOpen,
   textareaRef,
 }: {
   awareness: Awareness | null;
@@ -22,6 +24,8 @@ export function EditorCanvas({
   markdownText: string;
   onCaretMove: (cursor: { x: number; y: number }) => void;
   onDirty: () => void;
+  onSelectionChange: () => void;
+  previewOpen: boolean;
   textareaRef: RefObject<HTMLTextAreaElement | null>;
 }) {
   function sendCaretPosition() {
@@ -59,22 +63,22 @@ export function EditorCanvas({
   }
 
   return (
-    <div className="relative flex min-w-0 flex-col items-center transition-all duration-300 ease-out w-full">
+    <div className={`relative flex min-w-0 flex-col items-center transition-all duration-300 ease-out ${previewOpen ? "w-1/2" : "w-full"}`}>
       <div
         ref={canvasRef}
-        className="relative flex min-h-[calc(100dvh-150px)] w-full flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12"
+        className={`relative flex w-full flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 ${previewOpen ? "" : "min-h-[calc(100dvh-150px)]"}`}
       >
         <textarea
           ref={textareaRef}
-          className="min-h-[calc(100dvh-246px)] w-full resize-none overflow-hidden bg-transparent font-mono text-sm leading-relaxed text-zinc-800 outline-none [field-sizing:content] placeholder-zinc-400 dark:text-zinc-200"
+          className={`w-full resize-none overflow-hidden bg-transparent font-mono text-sm leading-relaxed text-zinc-800 outline-none [field-sizing:content] placeholder-zinc-400 dark:text-zinc-200 ${previewOpen ? "min-h-[2lh]" : "min-h-[calc(100dvh-246px)]"}`}
           value={markdownText}
           onChange={() => {
             onDirty();
-            window.requestAnimationFrame(sendCaretPosition);
+            window.requestAnimationFrame(() => { sendCaretPosition(); onSelectionChange(); });
           }}
-          onClick={() => window.requestAnimationFrame(sendCaretPosition)}
-          onKeyUp={sendCaretPosition}
-          onSelect={sendCaretPosition}
+          onClick={() => window.requestAnimationFrame(() => { sendCaretPosition(); onSelectionChange(); })}
+          onKeyUp={() => { sendCaretPosition(); onSelectionChange(); }}
+          onSelect={() => { sendCaretPosition(); onSelectionChange(); }}
           placeholder="Start writing Markdown..."
           readOnly={!editable}
         />

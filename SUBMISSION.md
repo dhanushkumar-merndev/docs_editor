@@ -30,6 +30,8 @@ https://drive.google.com/drive/folders/19kpItCTwPNY0vr60UuzqNUxoPDOdv93d?usp=sha
 - Create document → opens Markdown editor
 - Rename document (owner-only, inline input)
 - Markdown textarea editor with Yjs CRDT realtime sync
+- Header Markdown formatting controls for bold, italic, headings, and lists
+- Optional preview pane with Markdown or plain-text mode
 - Save (manual + autosave 1.2s debounce)
 - Reopen — content preserved after refresh
 - File import: `.md` files (raw Markdown) and `.txt` files (paragraphs)
@@ -85,7 +87,7 @@ Better Auth with Google OAuth. Session cookie is HttpOnly, checked server-side o
 Supabase Postgres + Drizzle ORM. JSONB `content` column supports two formats: `MarkdownDoc` (current, `{format: "markdown", text: "..."}`) and `TiptapDoc` (legacy, `{type: "doc", ...}`).
 
 ### Editor
-Raw Markdown `<textarea>` bound to Yjs `Y.Text`. Chosen over Tiptap WYSIWYG because Markdown is simpler, export is free, and Yjs adds realtime conflict-free text merging without rebuilding the editor surface. Tradeoff: no toolbar formatting buttons — users type Markdown syntax.
+Raw Markdown `<textarea>` bound to Yjs `Y.Text`. Chosen over Tiptap WYSIWYG because Markdown is simpler, export is free, and Yjs adds realtime conflict-free text merging without rebuilding the editor surface. Header controls insert common Markdown syntax, and the preview pane can render either formatted Markdown or plain text.
 
 The editor was refactored into focused route-scoped components and hooks. Document-specific UI lives beside the document route in `src/app/documents/[documentId]/components`, document behavior hooks live in `src/app/documents/[documentId]/hooks`, dashboard-only chunks live in `src/app/dashboard/components`, and the login form lives in `src/app/login/components`. Each touched file includes a short purpose comment, with deeper comments around Yjs snapshot seeding, CRDT textarea binding, and exact textarea caret measurement.
 

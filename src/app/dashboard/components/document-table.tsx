@@ -13,6 +13,7 @@ export function DocumentTable({
   timeFormat,
   timeZone,
   onAction,
+  onOpenDocument,
 }: {
   docs: DocumentSummary[];
   loading: boolean;
@@ -20,6 +21,7 @@ export function DocumentTable({
   timeFormat: TimeFormat;
   timeZone: TimeZonePreference;
   onAction: (action: PendingAction) => void;
+  onOpenDocument: (doc: DocumentSummary) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
@@ -27,18 +29,18 @@ export function DocumentTable({
       {!loading && docs.length === 0 ? <p className="p-5 text-sm text-zinc-500 dark:text-zinc-400">{emptyText}</p> : null}
       {docs.map((doc) => (
         <div key={doc.id} className="grid gap-4 border-t border-zinc-200 px-5 py-4 first:border-t-0 dark:border-zinc-800 md:grid-cols-[1fr_auto] md:items-center">
-          <Link href={`/documents/${doc.id}`} className="min-w-0">
+          <Link href={`/documents/${doc.id}`} className="min-w-0" onClick={() => onOpenDocument(doc)}>
             <p className="truncate font-medium">{doc.title}</p>
             <p className="mt-0.5 text-sm text-zinc-500 dark:text-zinc-400">{formatDate(doc.updatedAt, timeFormat, timeZone)}</p>
           </Link>
           <div className="flex flex-wrap items-center justify-end gap-6">
-            <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">
+            <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" onClick={() => onOpenDocument(doc)}>
               <Edit3 className="size-4" />
               {doc.role === "viewer" ? "View" : "Edit"}
             </Link>
             {doc.role === "owner" ? (
               <>
-                <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white">
+                <Link href={`/documents/${doc.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-zinc-700 transition hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white" onClick={() => onOpenDocument(doc)}>
                   <Share2 className="size-4" />
                   Share
                 </Link>

@@ -21,6 +21,7 @@ import { Logo } from "@/components/logo";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { authClient } from "@/lib/auth-client";
 import { ConfirmDialog } from "./components/confirm-dialog";
+import { DocumentOpenOverlay } from "./components/document-open-overlay";
 import { DocumentTable } from "./components/document-table";
 import { ProfileDialog } from "./components/profile-dialog";
 import { SidebarGroup } from "./components/sidebar-group";
@@ -50,7 +51,9 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
   const [selectedView, setSelectedView] = useState<DashboardView>("my");
   const [pendingAction, setPendingAction] = useState<PendingAction>(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [openingDocument, setOpeningDocument] = useState<DocumentSummary | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [profileSaving, setProfileSaving] = useState(false);
   const [profile, setProfile] = useState<ProfileState>({
     displayName: user.name || user.email,
     timeFormat: "12h",
@@ -192,12 +195,14 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
   }
 
   async function saveProfile(nextProfile: ProfileState) {
+    setProfileSaving(true);
     const response = await fetch("/api/profile", {
       method: "PATCH",
       headers: { "content-type": "application/json" },
       body: JSON.stringify(nextProfile),
     });
     const data = await readJson<{ error?: string }>(response);
+    setProfileSaving(false);
     if (!response.ok) {
       toast.error(data.error ?? "Failed to save profile");
       return;
@@ -219,16 +224,10 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
           <Logo />
         </div>
 
-        <Button className="mt-6 w-full" onClick={createDocument} disabled={creating}>
+        <Button className="mt-6 w-full bg-zinc-950 text-white shadow-sm hover:bg-zinc-800 dark:bg-white dark:text-zinc-950 dark:hover:bg-zinc-100" onClick={createDocument} disabled={creating}>
           {creating ? <Loader2 className="size-4 animate-spin" /> : <FilePlus2 className="size-4" />}
           Create Document
         </Button>
-        <label className="mt-2 inline-flex h-8 cursor-pointer items-center justify-center gap-2 rounded-lg border border-zinc-200 bg-white px-3 text-sm font-medium transition hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-950 dark:hover:bg-zinc-900">
-          {importing ? <Loader2 className="size-4 animate-spin" /> : <Upload className="size-4" />}
-          Import Document
-          <input className="sr-only" type="file" accept=".txt,.md,text/plain,text/markdown" onChange={(event) => void importTextFile(event.target.files?.[0])} />
-        </label>
-        <p className="mt-2 px-1 text-xs text-zinc-500 dark:text-zinc-400">Supported file types: .txt and .md</p>
 
         <div className="relative mt-4">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-zinc-400" />
@@ -239,11 +238,11 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
         <nav className="mt-6 space-y-6 overflow-y-auto pr-1">
           {query.trim().length < 2 ? (
             <>
-              <SidebarGroup title="Documents" view="my" activeView={selectedView} onView={setSelectedView} docs={sidebarMyDocs} loading={loading} emptyText="No owned documents" />
+              <SidebarGroup title="Documents" view="my" activeView={selectedView} onView={setSelectedView} docs={sidebarMyDocs} loading={loading} emptyText="No owned documents" onOpenDocument={setOpeningDocument} />
               <hr className="border-t border-zinc-200 dark:border-zinc-800" />
-              <SidebarGroup title="Shared With Me" view="shared" activeView={selectedView} onView={setSelectedView} docs={sidebarSharedDocs} loading={loading} emptyText="No shared documents" />
+              <SidebarGroup title="Shared With Me" view="shared" activeView={selectedView} onView={setSelectedView} docs={sidebarSharedDocs} loading={loading} emptyText="No shared documents" onOpenDocument={setOpeningDocument} />
               <hr className="border-t border-zinc-200 dark:border-zinc-800" />
-              <SidebarGroup title="Recent Documents" view="recent" activeView={selectedView} onView={setSelectedView} docs={recentDocs} loading={loading} emptyText="No recent documents" />
+              <SidebarGroup title="Recent Documents" view="recent" activeView={selectedView} onView={setSelectedView} docs={recentDocs} loading={loading} emptyText="No recent documents" onOpenDocument={setOpeningDocument} />
             </>
           ) : (
             <div className="space-y-2">
@@ -262,6 +261,7 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
                     key={doc.id}
                     href={`/documents/${doc.id}`}
                     className="flex items-center gap-2 rounded-md px-2 py-2 text-sm text-zinc-700 transition hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-white"
+                    onClick={() => setOpeningDocument(doc)}
                   >
                     <FileText className="size-4 shrink-0" />
                     <span className="min-w-0 flex-1 truncate">{doc.title}</span>
@@ -333,6 +333,23 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
           <StatCard label="Shared With Me" value={sharedDocs.length} loading={loading} onClick={() => setSelectedView("shared")} />
         </div>
 
+        <div className="mt-6">
+          <div
+            className="flex cursor-pointer items-center gap-3 rounded-lg border-2 border-dashed border-zinc-300 bg-white px-6 py-5 text-sm text-zinc-500 transition hover:border-zinc-400 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-400 dark:hover:border-zinc-500 dark:hover:bg-zinc-900"
+            onClick={() => document.getElementById("file-upload-input")?.click()}
+            onDragOver={(e) => { e.preventDefault(); e.currentTarget.classList.add("border-zinc-500", "bg-zinc-100", "dark:border-zinc-400", "dark:bg-zinc-800"); }}
+            onDragLeave={(e) => { e.currentTarget.classList.remove("border-zinc-500", "bg-zinc-100", "dark:border-zinc-400", "dark:bg-zinc-800"); }}
+            onDrop={(e) => { e.preventDefault(); e.currentTarget.classList.remove("border-zinc-500", "bg-zinc-100", "dark:border-zinc-400", "dark:bg-zinc-800"); void importTextFile(e.dataTransfer.files[0]); }}
+          >
+            {importing ? <Loader2 className="size-5 animate-spin text-zinc-400" /> : <Upload className="size-5 text-zinc-400" />}
+            <span className="flex-1">
+              {importing ? "Importing..." : "Drop .txt or .md file here, or click to upload"}
+            </span>
+            <span className="text-xs text-zinc-400 dark:text-zinc-500">.txt .md</span>
+            <input id="file-upload-input" className="sr-only" type="file" accept=".txt,.md,text/plain,text/markdown" onChange={(event) => void importTextFile(event.target.files?.[0])} />
+          </div>
+        </div>
+
         <section className="mt-8">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-lg font-semibold">{activeTitle}</h2>
@@ -345,6 +362,7 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
             timeFormat={profile.timeFormat}
             timeZone={profile.timeZone}
             onAction={setPendingAction}
+            onOpenDocument={setOpeningDocument}
           />
           {!loading && visibleCount < activeTable.length ? (
             <div ref={loadMoreRef} className="grid place-items-center py-6 text-sm text-zinc-500">
@@ -358,7 +376,8 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
       </section>
 
       {pendingAction ? <ConfirmDialog pendingAction={pendingAction} loading={actionLoading} onCancel={() => setPendingAction(null)} onConfirm={confirmAction} /> : null}
-      {profileOpen ? <ProfileDialog profile={profile} onClose={() => setProfileOpen(false)} onSave={saveProfile} /> : null}
+      {profileOpen ? <ProfileDialog profile={profile} onClose={() => setProfileOpen(false)} onSave={saveProfile} saving={profileSaving} /> : null}
+      {openingDocument ? <DocumentOpenOverlay title={openingDocument.title} /> : null}
     </main>
   );
 }

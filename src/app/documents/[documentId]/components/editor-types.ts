@@ -5,6 +5,8 @@ export type SaveState = "saved" | "dirty" | "saving" | "error";
 
 export type EditorDocument = AjaiaDocument & { role: MemberRole };
 
+export type PreviewMode = "markdown" | "plain";
+
 export const pageWidthClass: Record<EditorDocument["pageSize"], string> = {
   a4: "max-w-[794px]",
   letter: "max-w-[816px]",

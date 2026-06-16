@@ -1,10 +1,10 @@
 # Ajaia Docs
 
-Ajaia Docs is a lightweight collaborative document editor inspired by Google Docs. It focuses on the assignment-critical slice: Google login, dashboard, document creation, Markdown editing with Yjs CRDT realtime sync, save/reopen, file import (.txt/.md), sharing with roles, owned/shared separation, validation, persistence, and tests.
+Ajaia Docs is a lightweight collaborative document editor inspired by Google Docs. It focuses on the assignment-critical slice: Google login, dashboard, document creation, Markdown editing with Yjs CRDT realtime sync, formatted preview, save/reopen, file import (.txt/.md), sharing with roles, owned/shared separation, validation, persistence, and tests.
 
 ## Tech Stack
 
-Next.js App Router, TypeScript, Tailwind CSS v4, shadcn-style UI primitives, Better Auth (Google OAuth), Supabase Postgres, Supabase Realtime Broadcast, Drizzle ORM, Yjs, Markdown textarea editor, Zod, and Vercel.
+Next.js App Router, TypeScript, Tailwind CSS v4, shadcn-style UI primitives, Better Auth (Google OAuth), Supabase Postgres, Supabase Realtime Broadcast, Drizzle ORM, Yjs, Markdown textarea editor, `marked` preview rendering, Zod, and Vercel.
 
 ## Local Setup
 
@@ -70,7 +70,7 @@ pnpm db:push
 
 ## Known Limitations
 
-- The editor uses raw Markdown source with Yjs CRDT realtime sync — not a WYSIWYG rich text editor.
+- The editor uses raw Markdown source with Yjs CRDT realtime sync and optional Markdown/plain preview — not a WYSIWYG rich text editor.
 - Yjs updates are transported over Supabase Realtime Broadcast and saved back to Postgres as Markdown JSON.
 - Comments, suggestion mode, version history, enterprise ACLs, and full `.docx` parsing are intentionally omitted.
 - Image upload UI is not implemented (Supabase Storage bucket exists).

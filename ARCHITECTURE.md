@@ -18,7 +18,7 @@ Supabase Storage bucket `document-assets` is configured but the image upload UI 
 
 ## Editor
 
-The editor uses a `<textarea>` for raw Markdown source input bound to a Yjs `Y.Text`. This keeps the MVP lightweight while adding CRDT conflict resolution. The tradeoff is no toolbar-based formatting — users type Markdown syntax directly.
+The editor uses a `<textarea>` for raw Markdown source input bound to a Yjs `Y.Text`. This keeps the MVP lightweight while adding CRDT conflict resolution. The header includes Markdown insertion controls, and the optional preview pane can render Markdown HTML via `marked` or plain text.
 
 ## Sync
 

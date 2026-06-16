@@ -1,11 +1,13 @@
+import { Loader2 } from "lucide-react";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { TimeFormat, TimeZonePreference } from "@/lib/utils";
 import { timeZones, type ProfileState } from "../dashboard-types";
 
 // Lets a dashboard user edit display name and local time display preferences.
-export function ProfileDialog({ profile, onClose, onSave }: { profile: ProfileState; onClose: () => void; onSave: (profile: ProfileState) => void }) {
+export function ProfileDialog({ profile, onClose, onSave, saving }: { profile: ProfileState; onClose: () => void; onSave: (profile: ProfileState) => void; saving?: boolean }) {
   const [draft, setDraft] = useState(profile);
 
   return (
@@ -17,37 +19,41 @@ export function ProfileDialog({ profile, onClose, onSave }: { profile: ProfileSt
             Display name
             <Input className="mt-2" value={draft.displayName} onChange={(event) => setDraft({ ...draft, displayName: event.target.value })} />
           </label>
-          <label className="block text-sm font-medium">
+          <div className="block text-sm font-medium">
             Time format
-            <select
-              className="mt-2 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              value={draft.timeFormat}
-              onChange={(event) => setDraft({ ...draft, timeFormat: event.target.value as TimeFormat })}
-            >
-              <option value="12h">12-hour time</option>
-              <option value="24h">24-hour time</option>
-            </select>
-          </label>
-          <label className="block text-sm font-medium">
+            <Select value={draft.timeFormat} onValueChange={(val) => setDraft({ ...draft, timeFormat: val as TimeFormat })}>
+              <SelectTrigger className="mt-2 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="center">
+                <SelectItem value="12h">12-hour time</SelectItem>
+                <SelectItem value="24h">24-hour time</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="block text-sm font-medium">
             Timezone
-            <select
-              className="mt-2 h-9 w-full rounded-lg border border-zinc-200 bg-white px-3 text-sm dark:border-zinc-800 dark:bg-zinc-950"
-              value={draft.timeZone}
-              onChange={(event) => setDraft({ ...draft, timeZone: event.target.value as TimeZonePreference })}
-            >
-              {timeZones.map((zone) => (
-                <option key={zone.value} value={zone.value}>
-                  {zone.label}
-                </option>
-              ))}
-            </select>
-          </label>
+            <Select value={draft.timeZone} onValueChange={(val) => setDraft({ ...draft, timeZone: val as TimeZonePreference })}>
+              <SelectTrigger className="mt-2 w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent position="popper" align="center">
+                {timeZones.map((zone) => (
+                  <SelectItem key={zone.value} value={zone.value}>
+                    {zone.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
         </div>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={() => onSave(draft)}>Save profile</Button>
+          <Button onClick={() => onSave(draft)} disabled={saving} className="min-w-[100px]">
+            {saving ? <Loader2 className="size-4 animate-spin mx-auto" /> : "Save profile"}
+          </Button>
         </div>
       </div>
     </div>

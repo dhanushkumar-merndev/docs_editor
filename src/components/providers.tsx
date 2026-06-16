@@ -15,14 +15,15 @@ type ThemeContextValue = {
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  const [theme, setThemeState] = useState<Theme>("light");
+  // Default dark matches the beforeInteractive theme script to avoid a first-load flash.
+  const [theme, setThemeState] = useState<Theme>("dark");
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
     const id = window.setTimeout(() => {
       const storedTheme = window.localStorage.getItem("ajaia-theme");
       const currentTheme = document.documentElement.dataset.theme;
-      const nextTheme = storedTheme === "dark" || storedTheme === "light" ? storedTheme : currentTheme === "dark" ? "dark" : "light";
+      const nextTheme = storedTheme === "dark" || storedTheme === "light" ? storedTheme : currentTheme === "light" ? "light" : "dark";
       setThemeState(nextTheme);
       document.documentElement.classList.toggle("dark", nextTheme === "dark");
       document.documentElement.dataset.theme = nextTheme;

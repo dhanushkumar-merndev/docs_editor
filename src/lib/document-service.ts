@@ -264,3 +264,59 @@ export async function searchDocumentsForUser(actor: CurrentUser, query: string):
     updatedAt: toIso(row.updatedAt),
   }));
 }
+
+export async function transferDocumentOwnership(documentId: string, actor: CurrentUser, newOwnerUserId: string) {
+  const doc = await getDocumentForUser(documentId, actor);
+  if (!doc || !can(doc.role, "transferOwnership")) return { ok: false, error: "Only owners can transfer ownership" };
+  if (newOwnerUserId === actor.id) return { ok: false, error: "You are already the owner" };
+
+  // New owner must already be a member
+  const [targetMembership] = await db
+    .select()
+    .from(documentMembers)
+    .where(and(eq(documentMembers.documentId, documentId), eq(documentMembers.userId, newOwnerUserId)))
+    .limit(1);
+  if (!targetMembership) return { ok: false, error: "That user is not a member of this document" };
+
+  // Atomic: update owner in documents, promote new owner, demote old owner
+  await db.update(documents).set({ ownerId: newOwnerUserId, updatedAt: new Date() }).where(eq(documents.id, documentId));
+  await db
+    .update(documentMembers)
+    .set({ role: "owner" })
+    .where(and(eq(documentMembers.documentId, documentId), eq(documentMembers.userId, newOwnerUserId)));
+  await db
+    .update(documentMembers)
+    .set({ role: "editor" })
+    .where(and(eq(documentMembers.documentId, documentId), eq(documentMembers.userId, actor.id)));
+
+  await logActivity("document.ownership_transferred", documentId, actor, { to: newOwnerUserId });
+  return { ok: true, error: null };
+}
+
+export async function updateMemberRoleForOwner(
+  documentId: string,
+  actor: CurrentUser,
+  targetUserId: string,
+  newRole: Exclude<MemberRole, "owner">,
+) {
+  const doc = await getDocumentForUser(documentId, actor);
+  if (!doc || !can(doc.role, "share")) return { ok: false, error: "Only owners can change member roles" };
+  if (targetUserId === actor.id) return { ok: false, error: "Cannot change your own role" };
+  await db
+    .update(documentMembers)
+    .set({ role: newRole })
+    .where(and(eq(documentMembers.documentId, documentId), eq(documentMembers.userId, targetUserId)));
+  await logActivity("member.role_changed", documentId, actor, { userId: targetUserId, role: newRole });
+  return { ok: true, error: null };
+}
+
+export async function removeMemberForOwner(documentId: string, actor: CurrentUser, targetUserId: string) {
+  const doc = await getDocumentForUser(documentId, actor);
+  if (!doc || !can(doc.role, "share")) return { ok: false, error: "Only owners can remove members" };
+  if (targetUserId === actor.id) return { ok: false, error: "Cannot remove yourself" };
+  await db
+    .delete(documentMembers)
+    .where(and(eq(documentMembers.documentId, documentId), eq(documentMembers.userId, targetUserId)));
+  await logActivity("member.removed", documentId, actor, { userId: targetUserId });
+  return { ok: true, error: null };
+}

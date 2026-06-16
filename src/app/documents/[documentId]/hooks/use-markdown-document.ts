@@ -29,6 +29,7 @@ export function useMarkdownDocument(
   const ytextRef = useRef<Y.Text | null>(null);
   const providerRef = useRef<YjsSupabaseProvider | null>(null);
   const unbindTextareaRef = useRef<(() => void) | null>(null);
+  const undoManagerRef = useRef<Y.UndoManager | null>(null);
 
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
@@ -59,6 +60,7 @@ export function useMarkdownDocument(
     ydocRef.current = ydoc;
     ytextRef.current = ytext;
     providerRef.current = provider;
+    undoManagerRef.current = new Y.UndoManager(ytext);
 
     const updateMarkdownText = () => setMarkdownText(ytext.toString());
     ytext.observe(updateMarkdownText);
@@ -85,6 +87,7 @@ export function useMarkdownDocument(
       ydocRef.current = null;
       ytextRef.current = null;
       providerRef.current = null;
+      undoManagerRef.current = null;
       setAwareness(null);
     };
   }, [initialDocument, initialMarkdown, user.id, user.name]);
@@ -177,7 +180,17 @@ export function useMarkdownDocument(
   function setAwarenessCursor(cursor: { x: number; y: number }) {
     providerRef.current?.awareness.setLocalStateField("cursor", cursor);
   }
+  const undo = useCallback(() => {
+    if (undoManagerRef.current) {
+      undoManagerRef.current.undo();
+    }
+  }, []);
 
+  const redo = useCallback(() => {
+    if (undoManagerRef.current) {
+      undoManagerRef.current.redo();
+    }
+  }, []);
   return {
     activeUserIds,
     awareness,
@@ -194,6 +207,8 @@ export function useMarkdownDocument(
     setSaveState,
     setTitleDraft,
     titleDraft,
+    undo,
+    redo,
   };
 }
 
