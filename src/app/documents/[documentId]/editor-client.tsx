@@ -210,7 +210,10 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     user.name,
   );
   const trackEditingRef = useRef(trackEditing);
-  trackEditingRef.current = trackEditing;
+
+  useEffect(() => {
+    trackEditingRef.current = trackEditing;
+  }, [trackEditing]);
 
   useEffect(() => {
     if (!livePointersEnabled) return;
