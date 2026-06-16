@@ -18,7 +18,7 @@ function hashUserId(id: string): number {
   return Math.abs(hash);
 }
 
-function getColor(userId: string): string {
+export function getColor(userId: string): string {
   return POINTER_COLORS[hashUserId(userId) % POINTER_COLORS.length];
 }
 

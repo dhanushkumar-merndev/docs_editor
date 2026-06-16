@@ -10,6 +10,8 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeft,
   Bold,
+  Undo2,
+  Redo2,
   Check,
   ChevronsUpDown,
   Download,
@@ -20,7 +22,6 @@ import {
   Italic,
   List,
   ListOrdered,
-  LogOut,
   Moon,
   Share2,
   Sun,
@@ -54,10 +55,12 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAjaiaTheme } from "@/components/providers";
 import { can, getRoleLabel } from "@/lib/permissions";
-import type { AjaiaDocument, MemberRole } from "@/lib/types";
+import type { AjaiaDocument, DocumentMember, MemberRole } from "@/lib/types";
 import type { CurrentUser } from "@/lib/session";
-import { useRealtimePointer } from "@/hooks/use-realtime-pointer";
+import { useRealtimePointer, getColor } from "@/hooks/use-realtime-pointer";
 import { PointerOverlay } from "@/components/pointer-overlay";
+import { marked } from "marked";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type EditorDocument = AjaiaDocument & { role: MemberRole };
@@ -68,19 +71,79 @@ const pageWidthClass: Record<EditorDocument["pageSize"], string> = {
   custom: "max-w-[900px]",
 };
 
-function plainText(nodes: JSONContent[] | undefined): string {
-  return (nodes ?? []).map((node) => node.text ?? plainText(node.content)).join("");
+function renderInline(node: JSONContent): string {
+  if (node.type === "text") {
+    let text = node.text ?? "";
+    for (const mark of node.marks ?? []) {
+      if (mark.type === "bold") text = `**${text}**`;
+      if (mark.type === "italic") text = `*${text}*`;
+      if (mark.type === "strike") text = `~~${text}~~`;
+      if (mark.type === "code") text = `\`${text}\``;
+      if (mark.type === "link") text = `[${text}](${String(mark.attrs?.href ?? "")})`;
+    }
+    return text;
+  }
+  if (node.type === "hardBreak") return "\n";
+  return (node.content ?? []).map(renderInline).join("");
+}
+
+function inlineText(node: JSONContent): string {
+  return (node.content ?? []).map(renderInline).join("");
 }
 
 function tiptapToMarkdown(node: JSONContent | undefined): string {
   if (!node) return "";
-  if (node.type === "doc") return (node.content ?? []).map(tiptapToMarkdown).join("\n\n").trim();
-  if (node.type === "paragraph") return plainText(node.content);
-  if (node.type === "heading") return `${"#".repeat(Number(node.attrs?.level ?? 1))} ${plainText(node.content)}`;
-  if (node.type === "bulletList") return (node.content ?? []).map((item) => `- ${plainText(item.content?.[0]?.content)}`).join("\n");
-  if (node.type === "orderedList") return (node.content ?? []).map((item, index) => `${index + 1}. ${plainText(item.content?.[0]?.content)}`).join("\n");
+  if (node.type === "doc") return (node.content ?? []).map(tiptapToMarkdown).filter(Boolean).join("\n\n").trim();
+  if (node.type === "paragraph") return inlineText(node);
+  if (node.type === "heading") return `${"#".repeat(Number(node.attrs?.level ?? 1))} ${inlineText(node)}`;
+  if (node.type === "bulletList") return (node.content ?? []).map(renderListItem).join("\n");
+  if (node.type === "orderedList") return (node.content ?? []).map((item, i) => renderListItem(item, i + 1)).join("\n");
+  if (node.type === "listItem") return renderListItem(node);
+  if (node.type === "codeBlock") {
+    const lang = String(node.attrs?.language ?? "");
+    return `\`\`\`${lang}\n${inlineText(node)}\n\`\`\``;
+  }
+  if (node.type === "blockquote") {
+    const inner = (node.content ?? []).map(tiptapToMarkdown).join("\n");
+    return inner.split("\n").map((l) => `> ${l}`).join("\n");
+  }
+  if (node.type === "horizontalRule") return "---";
   if (node.type === "image") return `![${String(node.attrs?.alt ?? "image")}](${String(node.attrs?.src ?? "")})`;
-  return plainText(node.content);
+  if (node.type === "table") {
+    const rows = (node.content ?? []).map((row) => {
+      const cells = (row.content ?? []).map((cell) => ` ${inlineText(cell)} `);
+      return `|${cells.join("|")}|`;
+    });
+    if (rows.length >= 2) {
+      const colCount = rows[0].split("|").length - 2;
+      rows.splice(1, 0, `|${Array(colCount).fill("---").join("|")}|`);
+    }
+    return rows.join("\n");
+  }
+  if (node.type === "taskList") return (node.content ?? []).map(renderTaskItem).join("\n");
+  if (node.type === "taskItem") return renderTaskItem(node);
+  return inlineText(node);
+}
+
+function renderListItem(item: JSONContent, index?: number) {
+  const prefix = index != null ? `${index}.` : "-";
+  const blocks = item.content ?? [];
+  const lines: string[] = [];
+  for (const block of blocks) {
+    if (block.type === "paragraph") {
+      lines.push(inlineText(block));
+    } else {
+      const nested = tiptapToMarkdown(block);
+      if (nested) lines.push(nested.split("\n").map((l) => `  ${l}`).join("\n"));
+    }
+  }
+  return `${prefix} ${lines.join("\n  ")}`;
+}
+
+function renderTaskItem(item: JSONContent) {
+  const checked = item.attrs?.checked ? "x" : " ";
+  const text = inlineText(item);
+  return `- [${checked}] ${text}`;
 }
 
 export function EditorClient({ initialDocument, user }: { initialDocument: EditorDocument | null; user: CurrentUser }) {
@@ -126,13 +189,11 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
   }, [doc?.updatedAt]);
 
-  const previewHtml = editor && doc ? editor.getHTML() : "";
+  const previewHtml = editor && doc ? marked.parse(tiptapToMarkdown(editor.getJSON()), { async: false }) as string : "";
 
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editor, editable]);
-
-  const activeMembers = doc?.members.slice(0, 4) ?? [];
 
   const livePointersEnabled = doc?.members && doc.members.length > 1;
   const editorSectionRef = useRef<HTMLDivElement>(null);
@@ -295,13 +356,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
               <SaveStateBadge state={saveState} />
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
-              <div className="flex -space-x-2">
-                {activeMembers.map((member) => (
-                  <div key={member.userId} title={`${member.name} · ${member.role}`} className="rounded-full border-2 border-white dark:border-zinc-950">
-                    <Avatar name={member.name} />
-                  </div>
-                ))}
-              </div>
+              <MembersStack members={doc?.members ?? []} />
               <Button variant="outline" onClick={() => (can(role, "share") ? setShareOpen(true) : toast.error("Only owners can share this document"))}>
                 <Share2 className="size-4" />
                 Share
@@ -357,7 +412,7 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
           </div>
           {previewOpen ? (
             <div className="w-1/2 min-w-0" style={{ animation: "fadeIn 0.3s ease-out" }}>
-              <div className="rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 prose prose-sm dark:prose-invert max-w-none">
+              <div className="markdown-preview rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
                 <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
               </div>
             </div>
@@ -381,6 +436,9 @@ function Toolbar({
   className?: string;
 }) {
   const buttons = [
+    { icon: Undo2, label: "Undo", run: () => editor?.chain().focus().undo().run(), active: false },
+    { icon: Redo2, label: "Redo", run: () => editor?.chain().focus().redo().run(), active: false },
+    { icon: null, label: "sep1", separator: true },
     { icon: Bold, label: "Bold", run: () => editor?.chain().focus().toggleBold().run(), active: editor?.isActive("bold") },
     { icon: Italic, label: "Italic", run: () => editor?.chain().focus().toggleItalic().run(), active: editor?.isActive("italic") },
     { icon: UnderlineIcon, label: "Underline", run: () => editor?.chain().focus().toggleUnderline().run(), active: editor?.isActive("underline") },
@@ -392,11 +450,15 @@ function Toolbar({
   ];
   return (
     <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}>
-      {buttons.map((item) => (
-        <Button key={item.label} type="button" variant={item.active ? "secondary" : "ghost"} size="icon" disabled={disabled || !editor} title={item.label} onClick={item.run}>
-          <item.icon className="size-4" />
-        </Button>
-      ))}
+      {buttons.map((item) =>
+        item.separator ? (
+          <div key={item.label} className="h-5 w-px bg-zinc-300 dark:bg-zinc-700" />
+        ) : (
+          <Button key={item.label} type="button" variant={item.active ? "secondary" : "ghost"} size="icon" disabled={disabled || !editor} title={item.label} onClick={item.run}>
+            {item.icon ? <item.icon className="size-4" /> : null}
+          </Button>
+        )
+      )}
     </div>
   );
 }
@@ -573,5 +635,53 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
         <p className="mt-4 text-xs text-zinc-500">Transfer ownership is documented as a stretch feature and intentionally left out of this MVP workflow.</p>
       </div>
     </div>
+  );
+}
+
+function MembersStack({ members }: { members: DocumentMember[] }) {
+  const max = 3;
+  const visible = members.slice(0, max);
+  const overflow = members.length - max;
+
+  return (
+    <Dialog>
+      <DialogTrigger asChild>
+        <button type="button" className="flex cursor-pointer items-center -space-x-2 hover:opacity-80">
+          {visible.map((member) => (
+            <div key={member.userId} className="rounded-full border-2 border-white dark:border-zinc-950">
+              <Avatar name={member.name} />
+            </div>
+          ))}
+          {overflow > 0 ? (
+            <div className="z-10 flex size-8 items-center justify-center rounded-full border-2 border-white bg-zinc-200 text-xs font-medium text-zinc-600 dark:border-zinc-950 dark:bg-zinc-700 dark:text-zinc-300">
+              +{overflow}
+            </div>
+          ) : null}
+        </button>
+      </DialogTrigger>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Document members</DialogTitle>
+        </DialogHeader>
+        <div className="divide-y divide-zinc-200 dark:divide-zinc-800">
+          {members.map((member) => (
+            <div key={member.userId} className="flex items-center gap-3 py-2.5">
+              <div className="relative shrink-0">
+                <Avatar name={member.name} />
+                <span
+                  className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white dark:border-zinc-950"
+                  style={{ backgroundColor: getColor(member.userId) }}
+                />
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-sm font-medium">{member.name}</p>
+                <p className="truncate text-xs text-zinc-500">{member.email}</p>
+              </div>
+              <Badge>{getRoleLabel(member.role)}</Badge>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }

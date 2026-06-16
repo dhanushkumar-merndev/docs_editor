@@ -2,11 +2,11 @@
 
 ## Source Code
 
-Included in this repository.
+https://github.com/dhanushkumar-merndev/assignment
 
 ## Live Product URL
 
-To be added after Vercel deployment.
+https://assignment-ajaia.vercel.app
 
 ## Walkthrough Video URL
 
@@ -21,24 +21,25 @@ To be added in `VIDEO_LINK.txt`.
 - Tiptap rich text editor
 - Manual save and reopen
 - Owner-only rename
-- Email sharing for registered users
-- Public editor links for signed-in users
+- Email sharing for registered users (direct add, no links)
 - Viewer/editor/owner permission handling
 - Light/dark theme
 - Search with debounce
+- Markdown export and preview
+- Live pointer awareness via Supabase Realtime Broadcast
 - `document_activity` history table for operations
 - Drizzle schema, env example, docs, and Vitest permission test
 
 ## What Is Partial
 
-- Image insertion is validated but should be moved from data URLs to Supabase Storage URLs before heavy production use.
-- Supabase Realtime presence/pointers are not fully wired.
 - Transfer ownership is not implemented in the UI.
+- Public share links were intentionally removed in favor of email-only direct adds.
+- Rate limiting is not wired (Upstash Redis not set up).
 
 ## Next 2-4 Hours
 
-- Replace image data URLs with Supabase Storage uploads.
-- Add Upstash rate limits to API entry points.
+- Add Upstash Redis rate limits to API entry points.
 - Add a visible activity/history panel.
-- Move pointer and presence transport to Supabase Realtime.
-- Deploy to Vercel and record the walkthrough.
+- Add transfer ownership UI.
+- Further polish live pointer smoothness.
+- Record the walkthrough video.

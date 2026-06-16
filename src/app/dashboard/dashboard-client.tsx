@@ -363,10 +363,10 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
                   <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-4 w-40" />
                 </div>
-              ) : documents.length === 0 ? (
+              ) : searchResults.length === 0 ? (
                 <p className="px-2 py-2 text-xs text-zinc-500">No documents found</p>
               ) : (
-                documents.slice(0, 10).map((doc) => (
+                searchResults.map((doc) => (
                   <Link
                     key={doc.id}
                     href={`/documents/${doc.id}`}
