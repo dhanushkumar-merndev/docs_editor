@@ -4,7 +4,7 @@
 **Email:** dhanushkumar.merndev@gmail.com  
 **Assignment:** Ajaia LLC — Full Stack Product Engineer  
 **Build window:** Focused 6-hour assignment slice  
-**Final feature commit:** `897f5c0` — `Scope route components by page`
+**Final feature commit:** `98008ce` — `Implement Yjs CRDT collaboration`
 
 ---
 
