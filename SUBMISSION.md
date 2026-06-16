@@ -4,7 +4,7 @@
 **Email:** dhanushkumar.merndev@gmail.com  
 **Assignment:** Ajaia LLC — Full Stack Product Engineer  
 **Build window:** Focused 6-hour assignment slice  
-**Final feature commit:** `c93420c` — `Tighten realtime draft and caret behavior`
+**Final feature commit:** `513b9d2` — `Refactor document editor into reusable components`
 
 ---
 
@@ -50,6 +50,7 @@ https://drive.google.com/drive/folders/19kpItCTwPNY0vr60UuzqNUxoPDOdv93d?usp=sha
 - Zod validation on all inputs
 - Poll-based sync (5s) as persistence fallback for shared document changes
 - A4/Letter/Custom page width selector
+- Reusable document editor components under `src/components/document-editor`
 - Vitest permission test
 
 ## What Is Partial
@@ -87,6 +88,8 @@ Supabase Postgres + Drizzle ORM. JSONB `content` column supports two formats: `M
 
 ### Editor
 Raw Markdown `<textarea>` + `marked` for live HTML preview. Chosen over Tiptap WYSIWYG because Markdown is simpler, export is free, and the preview pane gives instant visual feedback. Tradeoff: no toolbar formatting buttons — users type Markdown syntax.
+
+The editor was refactored into focused reusable components and hooks. Document-specific UI lives in `src/components/document-editor`, behavior hooks live in `src/hooks/document-editor`, and the route client only wires the page together. Each touched file includes a short purpose comment, with deeper comments around realtime draft protection, stale-save conflict handling, and exact textarea caret measurement.
 
 ### Sync
 Content sync uses lightweight Supabase Realtime Broadcast for live Markdown draft updates with ~80ms throttling and a 5-second polling fallback for persisted changes. The collaborator marker is a click-based blinking caret, not a mouse-follow pointer. Saves include the last known document timestamp; if another session saved first, the server returns a conflict instead of overwriting. This is safer than last-write-wins for the MVP, but it is not full CRDT/OT merging.
