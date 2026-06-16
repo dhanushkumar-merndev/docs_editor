@@ -1,36 +1,78 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Ajaia Docs
 
-## Getting Started
+Ajaia Docs is a lightweight collaborative document editor inspired by Google Docs. It focuses on the assignment-critical slice: login/demo access, dashboard, document creation, rich text editing, save/reopen, text import, image insertion, sharing with roles, owned/shared separation, validation, and tests.
 
-First, run the development server:
+## Tech Stack
+
+Next.js App Router, TypeScript, Tailwind CSS, shadcn-style UI primitives, Better Auth, Google OAuth, Supabase Postgres, Supabase Storage, Supabase Realtime, Drizzle ORM, Tiptap, Zod, Upstash Redis, Vitest, and Vercel.
+
+## Local Setup
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+cp .env.example .env.local
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Open `http://localhost:3000`. Demo mode works without secrets using browser localStorage. Add real env values when connecting Better Auth, Supabase, and Upstash.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Environment Variables
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+See `.env.example` for the full list:
 
-## Learn More
+- `DATABASE_URL`
+- `BETTER_AUTH_SECRET`
+- `BETTER_AUTH_URL`
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `NEXT_PUBLIC_SUPABASE_URL`
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+- `SUPABASE_SERVICE_ROLE_KEY`
+- `UPSTASH_REDIS_REST_URL`
+- `UPSTASH_REDIS_REST_TOKEN`
 
-To learn more about Next.js, take a look at the following resources:
+## Supabase Setup
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Create a Supabase project.
+2. Add `DATABASE_URL` to `.env.local`.
+3. Run the SQL in `drizzle/0000_initial.sql` or run Drizzle migrations after configuring credentials.
+4. Create a public or signed Storage bucket named `document-assets`.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Image uploads in demo mode use local data URLs. In production, route uploads through Supabase Storage with paths like `{documentId}/{assetId}-{fileName}` and persist metadata in `document_assets`. Images are limited to 2 MB each, with a maximum of 60 images per document.
 
-## Deploy on Vercel
+## Better Auth Setup
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Add `BETTER_AUTH_SECRET`, `BETTER_AUTH_URL`, `GOOGLE_CLIENT_ID`, and `GOOGLE_CLIENT_SECRET`. The app exposes Better Auth at `/api/auth/[...all]`. Demo login remains available for reviewers until Google OAuth is configured.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Commands
+
+```bash
+pnpm dev
+pnpm lint
+pnpm test
+pnpm build
+pnpm db:generate
+pnpm db:migrate
+```
+
+## How To Test Sharing
+
+1. Log in as Dhanush from `/login`.
+2. Create or open a document.
+3. Click Share, invite `reviewer@ajaia.com` as viewer or editor, or generate a share link.
+4. Switch demo user in the sidebar to Reviewer.
+5. Confirm the document appears under Shared With Me and role restrictions apply.
+
+## Known Limitations
+
+- Full CRDT realtime editing is intentionally out of scope.
+- The editor uses a visual page canvas, not true print-grade pagination.
+- Comments, suggestion mode, version history, enterprise ACLs, and full `.docx` parsing are intentionally omitted.
+- Transfer ownership is documented as a stretch feature and not fully implemented in the demo UI.
+- Demo mode uses localStorage; real deployment should wire the server actions to Drizzle/Supabase queries.
+- Documents are capped at 10 users total for free-tier friendliness. When full, sharing returns: `House full. Try again after sometime.`
+- Important create/import/share/upload/search actions should be rate limited in production with Upstash Redis; demo mode enforces local equivalents.
+
+## Live URL
+
+To be added after Vercel deployment.

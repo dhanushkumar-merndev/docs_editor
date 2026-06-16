@@ -19,6 +19,22 @@ The app should demonstrate document creation, editing, persistence, file handlin
 
 ---
 
+## Engineering Quality Rules
+
+Act like a senior developer throughout the build. Prefer clear domain types, predictable validation, small well-tested permission helpers, and production-minded failure states.
+
+TypeScript must be completed properly for the feature being touched. Do not silence related type errors by marking values as `any` or broad `unknown`; define real request, response, document, member, and editor-content types instead.
+
+Because this project is built for free-tier friendly infrastructure, enforce product limits in both validation and user-facing UI:
+
+- Maximum 10 users per document, including owner.
+- If a document already has 10 users, sharing must fail with: `House full. Try again after sometime.`
+- Maximum 60 uploaded images per document.
+- Maximum image file size is 2 MB.
+- Important creation/upload/share/search actions must be rate limited.
+
+---
+
 ## Final Tech Stack
 
 Use this stack only:
@@ -438,7 +454,13 @@ Save document content JSON
 Recommended max size:
 
 ```txt
-5 MB
+2 MB
+```
+
+Per-document image limit:
+
+```txt
+60 images
 ```
 
 Storage bucket:
@@ -521,6 +543,20 @@ Current members list
 ```
 
 Only owner can open share management.
+
+### Member limit
+
+For free-tier friendliness, each document may have at most:
+
+```txt
+10 users total, including owner
+```
+
+If a document already has 10 users, sharing must fail with:
+
+```txt
+House full. Try again after sometime.
+```
 
 ---
 
@@ -608,6 +644,8 @@ Share document: 20/minute
 Image upload: 20/hour
 Search: 60/minute
 ```
+
+Also apply create-document rate limiting to text/markdown file import, since file import creates documents.
 
 ---
 
@@ -752,7 +790,9 @@ Examples:
 ```txt
 Title: 1–120 characters
 Role: viewer/editor
-Image size: max 5 MB
+Image size: max 2 MB
+Images per document: max 60
+Document members: max 10 users including owner
 Text upload: .txt or .md only
 Search query: max 80 characters
 ```
@@ -782,7 +822,9 @@ Document saved
 You only have view access
 Only owners can share this document
 Unsupported file type
-Image must be under 5 MB
+Image must be under 2 MB
+This document already has 60 images
+House full. Try again after sometime.
 Too many requests. Try again shortly.
 ```
 
