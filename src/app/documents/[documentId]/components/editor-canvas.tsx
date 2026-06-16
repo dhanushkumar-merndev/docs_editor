@@ -36,7 +36,7 @@ export function EditorCanvas({
       >
         <textarea
           ref={textareaRef}
-          className={`w-full resize-none overflow-hidden bg-transparent font-mono text-sm leading-relaxed text-zinc-800 placeholder-zinc-400 outline-none dark:text-zinc-200 ${previewOpen ? "min-h-80" : "min-h-[calc(100dvh-246px)]"}`}
+          className={`w-full resize-none overflow-hidden bg-transparent font-mono text-sm leading-relaxed text-zinc-800 placeholder-zinc-400 outline-none dark:text-zinc-200 ${previewOpen ? "min-h-[2lh]" : "min-h-[calc(100dvh-246px)]"}`}
           value={markdownText}
           onChange={(event) => {
             const nextText = event.target.value;
