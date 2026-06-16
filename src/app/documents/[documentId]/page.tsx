@@ -6,5 +6,5 @@ export default async function DocumentPage({ params }: { params: Promise<{ docum
   const { documentId } = await params;
   const actor = await requireCurrentUser();
   const document = await getDocumentForUser(documentId, actor);
-  return <EditorClient initialDocument={document} />;
+  return <EditorClient initialDocument={document} user={actor} />;
 }

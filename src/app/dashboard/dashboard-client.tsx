@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import type { JSONContent } from "@tiptap/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Edit3, FilePlus2, FileText, Loader2, LogOut, MoreVertical, Search, Share2, Trash2, Upload, UserMinus } from "lucide-react";
 import { toast } from "sonner";
@@ -36,6 +37,96 @@ type ProfileState = {
   timeFormat: TimeFormat;
   timeZone: TimeZonePreference;
 };
+
+function parseInlineMarkdown(text: string): JSONContent[] | undefined {
+  const nodes: JSONContent[] = [];
+  const tokenPattern = /(`[^`]+`|\*\*[^*]+\*\*|\*[^*]+\*|\[[^\]]+\]\([^)]+\))/g;
+  let index = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = tokenPattern.exec(text)) !== null) {
+    if (match.index > index) {
+      nodes.push({ type: "text", text: text.slice(index, match.index) });
+    }
+
+    const token = match[0];
+    if (token.startsWith("`")) {
+      nodes.push({ type: "text", text: token.slice(1, -1), marks: [{ type: "code" }] });
+    } else if (token.startsWith("**")) {
+      nodes.push({ type: "text", text: token.slice(2, -2), marks: [{ type: "bold" }] });
+    } else if (token.startsWith("*")) {
+      nodes.push({ type: "text", text: token.slice(1, -1), marks: [{ type: "italic" }] });
+    } else {
+      const link = token.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
+      if (link) {
+        nodes.push({ type: "text", text: link[1], marks: [{ type: "link", attrs: { href: link[2] } }] });
+      }
+    }
+    index = match.index + token.length;
+  }
+
+  if (index < text.length) {
+    nodes.push({ type: "text", text: text.slice(index) });
+  }
+
+  return nodes.length ? nodes : undefined;
+}
+
+function paragraphNode(text: string): JSONContent {
+  return { type: "paragraph", content: parseInlineMarkdown(text.trim()) };
+}
+
+function markdownToTiptapDoc(markdown: string): JSONContent {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n");
+  const content: JSONContent[] = [];
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    const trimmed = line.trim();
+
+    if (!trimmed) {
+      index += 1;
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      content.push({
+        type: "heading",
+        attrs: { level: heading[1].length },
+        content: parseInlineMarkdown(heading[2]),
+      });
+      index += 1;
+      continue;
+    }
+
+    if (/^[-*]\s+/.test(trimmed) || /^\d+\.\s+/.test(trimmed)) {
+      const ordered = /^\d+\.\s+/.test(trimmed);
+      const items: JSONContent[] = [];
+      while (index < lines.length) {
+        const item = lines[index].trim();
+        const itemMatch = ordered ? item.match(/^\d+\.\s+(.+)$/) : item.match(/^[-*]\s+(.+)$/);
+        if (!itemMatch) break;
+        items.push({ type: "listItem", content: [paragraphNode(itemMatch[1])] });
+        index += 1;
+      }
+      content.push({ type: ordered ? "orderedList" : "bulletList", content: items });
+      continue;
+    }
+
+    const paragraphLines: string[] = [];
+    while (index < lines.length) {
+      const current = lines[index].trim();
+      if (!current || /^(#{1,3})\s+/.test(current) || /^[-*]\s+/.test(current) || /^\d+\.\s+/.test(current)) break;
+      paragraphLines.push(current);
+      index += 1;
+    }
+    content.push(paragraphNode(paragraphLines.join(" ")));
+  }
+
+  return { type: "doc", content: content.length ? content : [{ type: "paragraph" }] };
+}
 
 const timeZones: { value: TimeZonePreference; label: string }[] = [
   { value: "Asia/Kolkata", label: "India (IST)" },
@@ -165,13 +256,15 @@ export function DashboardClient({ user }: { user: CurrentUser }) {
     setImporting(true);
     const text = await file.text();
     const title = file.name.replace(/\.[^/.]+$/, "").replace(/[-_]+/g, " ").trim() || "Imported document";
-    const content = {
-      type: "doc",
-      content: text.split(/\n{2,}/).map((paragraph) => ({
-        type: "paragraph",
-        content: paragraph.trim() ? [{ type: "text", text: paragraph.trim() }] : undefined,
-      })),
-    };
+    const content = /\.md$/i.test(file.name)
+      ? markdownToTiptapDoc(text)
+      : {
+          type: "doc",
+          content: text.split(/\n{2,}/).map((paragraph) => ({
+            type: "paragraph",
+            content: paragraph.trim() ? [{ type: "text", text: paragraph.trim() }] : undefined,
+          })),
+        };
     const response = await fetch("/api/documents", {
       method: "POST",
       headers: { "content-type": "application/json" },

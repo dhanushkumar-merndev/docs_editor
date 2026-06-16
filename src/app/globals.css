@@ -63,7 +63,8 @@ body {
 }
 
 .ProseMirror p {
-  margin: 0.75rem 0;
+  margin: 0;
+  line-height: 1.4;
 }
 
 .ProseMirror h1 {
@@ -96,6 +97,11 @@ body {
   max-width: 100%;
   border-radius: 0.5rem;
   border: 1px solid rgb(228 228 231);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateX(16px); }
+  to { opacity: 1; transform: translateX(0); }
 }
 
 :root {

@@ -1,6 +1,6 @@
 import { and, desc, eq, ilike } from "drizzle-orm";
 import { db } from "@/db/client";
-import { documentActivity, documentMembers, documents, shareLinks, user as authUser } from "@/db/schema";
+import { documentActivity, documentMembers, documents, user as authUser } from "@/db/schema";
 import { MAX_DOCUMENT_MEMBERS } from "@/lib/limits";
 import { can } from "@/lib/permissions";
 import type { CurrentUser } from "@/lib/session";
@@ -222,29 +222,6 @@ export async function shareDocumentByEmail(documentId: string, actor: CurrentUse
     });
   await logActivity("member.shared", documentId, actor, { email, role });
   return { ok: true, error: null };
-}
-
-export async function createPublicEditorLink(documentId: string, actor: CurrentUser) {
-  const doc = await getDocumentForUser(documentId, actor);
-  if (!doc || !can(doc.role, "share")) return { ok: false, error: "Only owners can share this document", token: null };
-  const token = crypto.randomUUID().replaceAll("-", "");
-  await db.insert(shareLinks).values({ documentId, token, role: "editor", createdBy: actor.id });
-  await logActivity("share_link.created", documentId, actor, { role: "editor" });
-  return { ok: true, error: null, token };
-}
-
-export async function openPublicLink(token: string, actor: CurrentUser) {
-  const [link] = await db.select().from(shareLinks).where(eq(shareLinks.token, token)).limit(1);
-  if (!link?.documentId) return null;
-  await db
-    .insert(documentMembers)
-    .values({ documentId: link.documentId, userId: actor.id, role: "editor" })
-    .onConflictDoUpdate({
-      target: [documentMembers.documentId, documentMembers.userId],
-      set: { role: "editor" },
-    });
-  await logActivity("share_link.opened", link.documentId, actor, { role: "editor" });
-  return link.documentId;
 }
 
 export async function searchDocumentsForUser(actor: CurrentUser, query: string): Promise<DocumentSummary[]> {

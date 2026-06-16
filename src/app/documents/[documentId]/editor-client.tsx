@@ -1,6 +1,5 @@
 "use client";
 
-import ImageExtension from "@tiptap/extension-image";
 import LinkExtension from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Underline from "@tiptap/extension-underline";
@@ -12,19 +11,19 @@ import {
   ArrowLeft,
   Bold,
   Check,
-  ChevronDown,
   ChevronsUpDown,
   Download,
+  Eye,
   Heading1,
   Heading2,
   Heading3,
-  ImagePlus,
   Italic,
   List,
   ListOrdered,
-  Plus,
+  LogOut,
+  Moon,
   Share2,
-  Trash2,
+  Sun,
   UnderlineIcon,
   X,
 } from "lucide-react";
@@ -34,6 +33,7 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Command,
   CommandEmpty,
@@ -42,41 +42,31 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { imageSizeLimitLabel, MAX_IMAGES_PER_DOCUMENT, MAX_IMAGE_SIZE_BYTES } from "@/lib/limits";
+import { useAjaiaTheme } from "@/components/providers";
 import { can, getRoleLabel } from "@/lib/permissions";
-import type { AjaiaDocument, MemberRole, PageSize } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import type { AjaiaDocument, MemberRole } from "@/lib/types";
+import type { CurrentUser } from "@/lib/session";
+import { useRealtimePointer } from "@/hooks/use-realtime-pointer";
+import { PointerOverlay } from "@/components/pointer-overlay";
 
 type SaveState = "saved" | "dirty" | "saving" | "error";
 type EditorDocument = AjaiaDocument & { role: MemberRole };
 
-const pageStyles: Record<PageSize, string> = {
+const pageWidthClass: Record<EditorDocument["pageSize"], string> = {
   a4: "max-w-[794px]",
   letter: "max-w-[816px]",
-  custom: "max-w-[920px]",
+  custom: "max-w-[900px]",
 };
-
-const pageLabels: Record<PageSize, string> = {
-  a4: "A4",
-  letter: "Letter",
-  custom: "Custom",
-};
-
-const pageHeights: Record<PageSize, number> = {
-  a4: 1123,
-  letter: 1056,
-  custom: 980,
-};
-
-function countImages(content: JSONContent | JSONContent[] | undefined): number {
-  if (!content) return 0;
-  if (Array.isArray(content)) return content.reduce((total, node) => total + countImages(node), 0);
-  const current = content.type === "image" ? 1 : 0;
-  return current + countImages(content.content);
-}
 
 function plainText(nodes: JSONContent[] | undefined): string {
   return (nodes ?? []).map((node) => node.text ?? plainText(node.content)).join("");
@@ -93,22 +83,12 @@ function tiptapToMarkdown(node: JSONContent | undefined): string {
   return plainText(node.content);
 }
 
-async function imageFileToDataUrl(file: File) {
-  return new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result));
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(file);
-  });
-}
-
-export function EditorClient({ initialDocument }: { initialDocument: EditorDocument | null }) {
+export function EditorClient({ initialDocument, user }: { initialDocument: EditorDocument | null; user: CurrentUser }) {
   const [doc, setDoc] = useState<EditorDocument | null>(initialDocument);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [titleDraft, setTitleDraft] = useState("");
   const [shareOpen, setShareOpen] = useState(false);
-  const [pageSizeOpen, setPageSizeOpen] = useState(false);
-  const [deletePageOpen, setDeletePageOpen] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   const applyingRemoteUpdateRef = useRef(false);
   const saveStateRef = useRef<SaveState>("saved");
   const updatedAtRef = useRef(initialDocument?.updatedAt ?? "");
@@ -123,9 +103,8 @@ export function EditorClient({ initialDocument }: { initialDocument: EditorDocum
   const editor = useEditor(
     {
       extensions: [
-        StarterKit,
-        Underline,
-        ImageExtension.configure({ inline: false, allowBase64: true }),
+        StarterKit.configure({ link: false, underline: false }),
+        Underline.configure(),
         LinkExtension.configure({ openOnClick: false }),
         Placeholder.configure({ placeholder: "Start writing..." }),
       ],
@@ -147,11 +126,32 @@ export function EditorClient({ initialDocument }: { initialDocument: EditorDocum
     if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
   }, [doc?.updatedAt]);
 
+  const previewHtml = editor && doc ? editor.getHTML() : "";
+
   useEffect(() => {
     editor?.setEditable(editable);
   }, [editor, editable]);
 
   const activeMembers = doc?.members.slice(0, 4) ?? [];
+
+  const livePointersEnabled = doc?.members && doc.members.length > 1;
+  const editorSectionRef = useRef<HTMLDivElement>(null);
+  const { remotePointers, trackPointer } = useRealtimePointer(
+    doc?.id ?? "",
+    user.id,
+    user.name,
+  );
+
+  useEffect(() => {
+    if (!livePointersEnabled) return;
+    const el = editorSectionRef.current;
+    if (!el) return;
+    function onMouseMove(event: MouseEvent) {
+      trackPointer(event.clientX, event.clientY);
+    }
+    el.addEventListener("mousemove", onMouseMove);
+    return () => el.removeEventListener("mousemove", onMouseMove);
+  }, [livePointersEnabled, trackPointer]);
 
   const saveContent = useCallback(
     async (silent = false) => {
@@ -257,51 +257,6 @@ export function EditorClient({ initialDocument }: { initialDocument: EditorDocum
     }
   }
 
-  async function uploadImage(file: File | undefined) {
-    if (!file || !editor || !doc) return;
-    if (!can(role, "uploadImage")) {
-      toast.error("You only have view access");
-      return;
-    }
-    if (!["image/png", "image/jpeg", "image/webp"].includes(file.type)) {
-      toast.error("Unsupported file type");
-      return;
-    }
-    if (file.size > MAX_IMAGE_SIZE_BYTES) {
-      toast.error(`Image must be under ${imageSizeLimitLabel()}`);
-      return;
-    }
-    if (countImages(editor.getJSON()) >= MAX_IMAGES_PER_DOCUMENT) {
-      toast.error("This document already has 60 images");
-      return;
-    }
-    const src = await imageFileToDataUrl(file);
-    editor.chain().focus().setImage({ src, alt: file.name }).run();
-    setSaveState("dirty");
-    toast.success("Image inserted");
-  }
-
-  function updatePageSize(pageSize: PageSize) {
-    if (!doc) return;
-    setDoc({ ...doc, pageSize });
-    void fetch(`/api/documents/${doc.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "pageSize", pageSize }),
-    });
-  }
-
-  function updatePageCount(pageCount: number) {
-    if (!doc) return;
-    const nextPageCount = Math.max(1, Math.min(20, pageCount));
-    setDoc({ ...doc, pageCount: nextPageCount });
-    void fetch(`/api/documents/${doc.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "pageCount", pageCount: nextPageCount }),
-    });
-  }
-
   function exportMarkdown() {
     if (!editor || !doc) return;
     const markdown = tiptapToMarkdown(editor.getJSON());
@@ -318,26 +273,28 @@ export function EditorClient({ initialDocument }: { initialDocument: EditorDocum
     <main className="min-h-dvh bg-zinc-100 dark:bg-zinc-950">
       <header className="sticky top-0 z-40 border-b border-zinc-200 bg-white/90 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/90">
         <div className="flex flex-col gap-3 px-4 py-3 lg:px-6">
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="grid grid-cols-[auto_1fr_auto] items-center gap-2">
             <Link href="/dashboard">
               <Button variant="ghost" size="icon" title="Back">
                 <ArrowLeft className="size-4" />
               </Button>
             </Link>
-            <Input
-              className="h-9 max-w-md border-transparent bg-transparent px-2 text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
-              value={titleDraft}
-              onChange={(event) => setTitleDraft(event.target.value)}
-              onBlur={rename}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") event.currentTarget.blur();
-              }}
-              readOnly={!can(role, "rename")}
-              title={can(role, "rename") ? "Rename document" : "Only owner can rename"}
-            />
-            <Badge>{getRoleLabel(role)}</Badge>
-            <SaveStateBadge state={saveState} updatedAt={doc.updatedAt} />
-            <div className="ml-auto flex flex-wrap items-center justify-end gap-2">
+            <div className="flex items-center justify-start gap-2">
+              <Input
+                className="h-9 max-w-[200px] border-transparent bg-transparent px-2 text-left text-lg font-semibold focus:border-zinc-300 dark:focus:border-zinc-700"
+                value={titleDraft}
+                onChange={(event) => setTitleDraft(event.target.value)}
+                onBlur={rename}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") event.currentTarget.blur();
+                }}
+                readOnly={!can(role, "rename")}
+                maxLength={20}
+                title={can(role, "rename") ? "Rename document" : "Only owner can rename"}
+              />
+              <SaveStateBadge state={saveState} />
+            </div>
+            <div className="flex flex-wrap items-center justify-end gap-2">
               <div className="flex -space-x-2">
                 {activeMembers.map((member) => (
                   <div key={member.userId} title={`${member.name} · ${member.role}`} className="rounded-full border-2 border-white dark:border-zinc-950">
@@ -345,11 +302,6 @@ export function EditorClient({ initialDocument }: { initialDocument: EditorDocum
                   </div>
                 ))}
               </div>
-              <label className="inline-flex h-8 cursor-pointer items-center justify-center gap-1.5 rounded-lg border border-border bg-background px-2.5 text-sm font-medium whitespace-nowrap transition-all hover:bg-muted hover:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50">
-                <ImagePlus className="size-4" />
-                Upload image
-                <input className="sr-only" type="file" accept=".png,.jpg,.jpeg,.webp,image/png,image/jpeg,image/webp" onChange={(event) => uploadImage(event.target.files?.[0])} disabled={!can(role, "uploadImage")} />
-              </label>
               <Button variant="outline" onClick={() => (can(role, "share") ? setShareOpen(true) : toast.error("Only owners can share this document"))}>
                 <Share2 className="size-4" />
                 Share
@@ -358,94 +310,75 @@ export function EditorClient({ initialDocument }: { initialDocument: EditorDocum
                 <Download className="size-4" />
                 Export
               </Button>
-              <ThemeToggle />
+              <Button variant={previewOpen ? "secondary" : "outline"} onClick={() => setPreviewOpen(!previewOpen)}>
+                <Eye className="size-4" />
+                Preview
+              </Button>
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button type="button" className="cursor-pointer rounded-full border-2 border-white dark:border-zinc-950">
+                    <Avatar name={user.name} src={user.image ?? undefined} />
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent side="bottom" align="end" className="w-56">
+                  <DropdownMenuLabel>
+                    <span className="block truncate text-sm font-medium">{user.name}</span>
+                    <span className="block truncate text-xs font-normal text-zinc-500">{user.email}</span>
+                    {doc.ownerId === user.id ? (
+                      <span className="mt-0.5 block text-xs font-medium text-amber-600 dark:text-amber-400">Owner</span>
+                    ) : null}
+                  </DropdownMenuLabel>
+                  {doc.ownerId !== user.id ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      <div className="px-2 py-1.5">
+                        <p className="text-xs font-medium text-zinc-500">Owner</p>
+                        <p className="truncate text-sm">{doc.ownerName}</p>
+                        <p className="truncate text-xs text-zinc-500">{doc.ownerEmail}</p>
+                      </div>
+                    </>
+                  ) : null}
+                  <DropdownMenuSeparator />
+                  <ThemeToggleInDropdown />
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
           </div>
-          <Toolbar editor={editor} disabled={!editable} pageSize={doc.pageSize} pageSizeOpen={pageSizeOpen} onPageSizeOpen={setPageSizeOpen} onPageSize={updatePageSize} />
+          <Toolbar editor={editor} disabled={!editable} className="justify-center" />
         </div>
       </header>
 
-      <section className="px-3 py-8 lg:px-8">
-        <div className="space-y-6">
-          {Array.from({ length: doc.pageCount }).map((_, index) => (
-            <div
-              key={index}
-              className={`relative mx-auto ${pageStyles[doc.pageSize]} bg-white p-8 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:ring-zinc-800 md:p-12`}
-              style={{ minHeight: pageHeights[doc.pageSize] }}
-            >
-              <div className="absolute bottom-4 right-5 text-xs text-zinc-400">Page {index + 1}</div>
-              {index === 0 ? <EditorContent editor={editor} /> : <div className="grid min-h-[820px] place-items-center text-sm text-zinc-300">Manual visual page</div>}
+      <section ref={editorSectionRef} className="px-3 py-8 lg:px-8">
+        <div className={`flex gap-6 transition-all duration-300 ${previewOpen ? "" : "justify-center"}`}>
+          <div className={`transition-all duration-300 ease-out ${previewOpen ? "w-1/2 min-w-0" : `w-full ${pageWidthClass[doc.pageSize]}`}`}>
+            <div className="rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12">
+              <EditorContent editor={editor} />
             </div>
-          ))}
+          </div>
+          {previewOpen ? (
+            <div className="w-1/2 min-w-0" style={{ animation: "fadeIn 0.3s ease-out" }}>
+              <div className="rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 prose prose-sm dark:prose-invert max-w-none">
+                <div dangerouslySetInnerHTML={{ __html: previewHtml }} />
+              </div>
+            </div>
+          ) : null}
         </div>
-        <PageControls
-          disabled={!editable}
-          pageCount={doc.pageCount}
-          onAdd={() => updatePageCount(doc.pageCount + 1)}
-          onAskDelete={() => setDeletePageOpen(true)}
-        />
       </section>
 
       {shareOpen ? <ShareDialog doc={doc} onClose={() => setShareOpen(false)} onDocumentChange={setDoc} /> : null}
-      {deletePageOpen ? (
-        <DeletePageDialog
-          onCancel={() => setDeletePageOpen(false)}
-          onDelete={() => {
-            updatePageCount(doc.pageCount - 1);
-            setDeletePageOpen(false);
-          }}
-        />
-      ) : null}
+      <PointerOverlay pointers={remotePointers} containerRef={editorSectionRef} />
     </main>
-  );
-}
-
-function PageControls({ disabled, pageCount, onAdd, onAskDelete }: { disabled: boolean; pageCount: number; onAdd: () => void; onAskDelete: () => void }) {
-  return (
-    <div className="mx-auto mt-5 flex max-w-[794px] items-center justify-center gap-2">
-      <Button variant="outline" onClick={onAdd} disabled={disabled || pageCount >= 20}>
-        <Plus className="size-4" />
-        Add page
-      </Button>
-      {pageCount > 1 ? (
-        <Button variant="danger" onClick={onAskDelete} disabled={disabled}>
-          <Trash2 className="size-4" />
-          Delete page
-        </Button>
-      ) : null}
-    </div>
-  );
-}
-
-function DeletePageDialog({ onCancel, onDelete }: { onCancel: () => void; onDelete: () => void }) {
-  return (
-    <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
-      <div className="w-full max-w-md rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
-        <h2 className="text-lg font-semibold">Delete last page?</h2>
-        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">This removes the last visual page from the layout. The document text stays in the saved editor content.</p>
-        <div className="mt-5 flex justify-end gap-2">
-          <Button variant="outline" onClick={onCancel}>Cancel</Button>
-          <Button variant="danger" onClick={onDelete}>Delete page</Button>
-        </div>
-      </div>
-    </div>
   );
 }
 
 function Toolbar({
   editor,
   disabled,
-  pageSize,
-  pageSizeOpen,
-  onPageSizeOpen,
-  onPageSize,
+  className,
 }: {
   editor: Editor | null;
   disabled: boolean;
-  pageSize: PageSize;
-  pageSizeOpen: boolean;
-  onPageSizeOpen: (open: boolean) => void;
-  onPageSize: (size: PageSize) => void;
+  className?: string;
 }) {
   const buttons = [
     { icon: Bold, label: "Bold", run: () => editor?.chain().focus().toggleBold().run(), active: editor?.isActive("bold") },
@@ -458,45 +391,29 @@ function Toolbar({
     { icon: ListOrdered, label: "Numbers", run: () => editor?.chain().focus().toggleOrderedList().run(), active: editor?.isActive("orderedList") },
   ];
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className={`flex flex-wrap items-center gap-2 ${className ?? ""}`}>
       {buttons.map((item) => (
         <Button key={item.label} type="button" variant={item.active ? "secondary" : "ghost"} size="icon" disabled={disabled || !editor} title={item.label} onClick={item.run}>
           <item.icon className="size-4" />
         </Button>
       ))}
-      <div className="relative">
-        <button
-          type="button"
-          className="inline-flex h-9 min-w-28 items-center justify-between gap-2 rounded-md border border-zinc-200 bg-white px-3 text-sm shadow-sm dark:border-zinc-800 dark:bg-zinc-950"
-          onClick={() => onPageSizeOpen(!pageSizeOpen)}
-        >
-          {pageLabels[pageSize]}
-          <ChevronDown className="size-4 text-zinc-400" />
-        </button>
-        {pageSizeOpen ? (
-          <div className="absolute left-0 top-10 z-50 w-36 overflow-hidden rounded-md border border-zinc-200 bg-white p-1 shadow-lg dark:border-zinc-800 dark:bg-zinc-950">
-            {(["a4", "letter", "custom"] as PageSize[]).map((size) => (
-              <button
-                key={size}
-                type="button"
-                className="flex h-8 w-full items-center rounded px-2 text-left text-sm hover:bg-zinc-100 dark:hover:bg-zinc-900"
-                onClick={() => {
-                  onPageSize(size);
-                  onPageSizeOpen(false);
-                }}
-              >
-                {pageLabels[size]}
-              </button>
-            ))}
-          </div>
-        ) : null}
-      </div>
     </div>
   );
 }
 
-function SaveStateBadge({ state, updatedAt }: { state: SaveState; updatedAt: string }) {
-  const text = state === "dirty" ? "Unsaved changes" : state === "saving" ? "Saving..." : state === "error" ? "Save failed" : `Saved ${formatDate(updatedAt)}`;
+function ThemeToggleInDropdown() {
+  const { mounted, theme, setTheme } = useAjaiaTheme();
+  const isDark = mounted && theme === "dark";
+  return (
+    <DropdownMenuItem onClick={() => setTheme(isDark ? "light" : "dark")}>
+      {isDark ? <Sun className="size-4" /> : <Moon className="size-4" />}
+      {isDark ? "Light mode" : "Dark mode"}
+    </DropdownMenuItem>
+  );
+}
+
+function SaveStateBadge({ state }: { state: SaveState }) {
+  const text = state === "dirty" ? "Unsaved changes" : state === "saving" ? "Saving..." : state === "error" ? "Save failed" : "Saved";
   return (
     <Badge className={state === "dirty" ? "border-amber-300 bg-amber-50 text-amber-800 dark:bg-amber-950 dark:text-amber-200" : ""}>
       {state === "saved" ? <Check className="mr-1 size-3" /> : null}
@@ -512,17 +429,16 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
   const [results, setResults] = useState<{ id: string; name: string; email: string; image: string | null }[]>([]);
   const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<Exclude<MemberRole, "owner">>("viewer");
-  const [link, setLink] = useState("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     if (search.length < 2) {
-      setResults([]);
       return;
     }
-    setLoading(true);
-    debounceRef.current = setTimeout(async () => {
+    const id = setTimeout(async () => {
+      setLoading(true);
+      setResults([]);
       try {
         const response = await fetch(`/api/users/search?q=${encodeURIComponent(search)}`);
         if (response.ok) {
@@ -539,6 +455,7 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
         setLoading(false);
       }
     }, 300);
+    debounceRef.current = id;
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
   }, [search]);
 
@@ -566,23 +483,6 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
       .catch((error: Error) => toast.error(error.message));
   }
 
-  function handleLink() {
-    fetch(`/api/documents/${doc.id}`, {
-      method: "PATCH",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "publicLink" }),
-    })
-      .then(async (response) => {
-        const data = (await response.json()) as { token?: string; error?: string };
-        if (!response.ok || !data.token) throw new Error(data.error ?? "Failed to create link");
-        const url = `${window.location.origin}/share/${data.token}`;
-        setLink(url);
-        navigator.clipboard?.writeText(url).catch(() => undefined);
-        toast.success("Public editor link copied");
-      })
-      .catch((error: Error) => toast.error(error.message));
-  }
-
   const alreadyMembers = new Set(doc.members.map((m) => m.userId));
 
   return (
@@ -594,65 +494,66 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
             <X className="size-4" />
           </Button>
         </div>
-        <div className="mt-4 grid gap-3 md:grid-cols-[1fr_130px_auto]">
-          <Popover open={open} onOpenChange={setOpen}>
-            <PopoverTrigger asChild>
-              <Button variant="outline" role="combobox" aria-expanded={open} className="justify-between">
-                {selected ? (
-                  <span className="truncate">{selected.name} ({selected.email})</span>
-                ) : (
-                  <span className="text-muted-foreground">Search registered users...</span>
-                )}
-                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
-              <Command>
-                <CommandInput placeholder="Type name or email..." value={search} onValueChange={setSearch} />
-                <CommandList>
-                  <CommandEmpty>{loading ? "Searching..." : "No registered user found"}</CommandEmpty>
-                  <CommandGroup>
-                    {results.map((user) => (
-                      <CommandItem
-                        key={user.id}
-                        value={user.email}
-                        disabled={alreadyMembers.has(user.id)}
-                        onSelect={(currentValue) => {
-                          const found = results.find((u) => u.email === currentValue);
-                          if (found) {
-                            setSelected(found);
-                            setOpen(false);
-                          }
-                        }}
-                      >
-                        <Avatar name={user.name} />
-                        <div className="min-w-0 flex-1">
-                          <p className="truncate text-sm font-medium">{user.name}</p>
-                          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
-                        </div>
-                        {alreadyMembers.has(user.id) ? (
-                          <span className="text-xs text-muted-foreground">Already member</span>
-                        ) : selected?.id === user.id ? (
-                          <Check className="size-4" />
-                        ) : null}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                </CommandList>
-              </Command>
-            </PopoverContent>
-          </Popover>
-          <select className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-800" value={role} onChange={(event) => setRole(event.target.value as Exclude<MemberRole, "owner">)}>
-            <option value="viewer">Viewer</option>
-            <option value="editor">Editor</option>
-          </select>
+        <div className="mt-4 flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <Popover open={open} onOpenChange={setOpen}>
+              <PopoverTrigger asChild>
+                <Button variant="outline" role="combobox" aria-expanded={open} className="w-full justify-between">
+                  {selected ? (
+                    <span className="truncate">{selected.name} ({selected.email})</span>
+                  ) : (
+                    <span className="text-muted-foreground">Search registered users...</span>
+                  )}
+                  <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Type name or email..." value={search} onValueChange={setSearch} />
+                  <CommandList>
+                    <CommandEmpty>{loading ? "Searching..." : "No registered user found"}</CommandEmpty>
+                    <CommandGroup>
+                      {results.map((user) => (
+                        <CommandItem
+                          key={user.id}
+                          value={user.email}
+                          disabled={alreadyMembers.has(user.id)}
+                          onSelect={(currentValue) => {
+                            const found = results.find((u) => u.email === currentValue);
+                            if (found) {
+                              setSelected(found);
+                              setOpen(false);
+                            }
+                          }}
+                        >
+                          <Avatar name={user.name} />
+                          <div className="min-w-0 flex-1">
+                            <p className="truncate text-sm font-medium">{user.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                          </div>
+                          {alreadyMembers.has(user.id) ? (
+                            <span className="text-xs text-muted-foreground">Already member</span>
+                          ) : selected?.id === user.id ? (
+                            <Check className="size-4" />
+                          ) : null}
+                        </CommandItem>
+                      ))}
+                    </CommandGroup>
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
+          </div>
+          <Select value={role} onValueChange={(val) => setRole(val as Exclude<MemberRole, "owner">)}>
+            <SelectTrigger className="w-[130px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="viewer">Viewer</SelectItem>
+              <SelectItem value="editor">Editor</SelectItem>
+            </SelectContent>
+          </Select>
           <Button onClick={handleShare} disabled={!selected}>Invite</Button>
-        </div>
-        <div className="mt-3 flex gap-2">
-          <Button variant="outline" onClick={handleLink}>
-            Generate/copy share link
-          </Button>
-          {link ? <Input readOnly value={link} /> : null}
         </div>
         <div className="mt-5">
           <p className="mb-2 text-sm font-semibold">Current members</p>

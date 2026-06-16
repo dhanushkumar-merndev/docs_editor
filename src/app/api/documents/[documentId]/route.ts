@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  createPublicEditorLink,
   deleteDocumentForOwner,
   getDocumentForUser,
   leaveSharedDocument,
@@ -26,7 +25,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   const actor = await requireCurrentUser();
   const { documentId } = await context.params;
   const body = (await request.json()) as {
-    action: "save" | "rename" | "pageSize" | "pageCount" | "shareEmail" | "publicLink" | "leave";
+    action: "save" | "rename" | "pageSize" | "pageCount" | "shareEmail" | "leave";
     content?: TiptapDoc;
     title?: string;
     pageSize?: string;
@@ -68,11 +67,6 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     const parsedRole = shareRoleSchema.safeParse(body.role);
     if (!parsedEmail.success || !parsedRole.success) return NextResponse.json({ error: "Invalid sharing request" }, { status: 400 });
     const result = await shareDocumentByEmail(documentId, actor, parsedEmail.data, parsedRole.data);
-    return NextResponse.json(result, { status: result.ok ? 200 : 403 });
-  }
-
-  if (body.action === "publicLink") {
-    const result = await createPublicEditorLink(documentId, actor);
     return NextResponse.json(result, { status: result.ok ? 200 : 403 });
   }
 

@@ -73,17 +73,6 @@ export const documentMembers = pgTable(
   (table) => [unique().on(table.documentId, table.userId)],
 );
 
-export const documentAssets = pgTable("document_assets", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }),
-  uploadedBy: text("uploaded_by").notNull(),
-  storagePath: text("storage_path").notNull(),
-  fileName: text("file_name").notNull(),
-  fileType: text("file_type").notNull(),
-  fileSize: integer("file_size"),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
-});
-
 export const userProfiles = pgTable("user_profiles", {
   userId: text("user_id").primaryKey(),
   displayName: text("display_name"),
@@ -91,16 +80,6 @@ export const userProfiles = pgTable("user_profiles", {
   timeFormat: text("time_format").notNull().default("12h"),
   timeZone: text("time_zone").notNull().default("Asia/Kolkata"),
   updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow(),
-});
-
-export const shareLinks = pgTable("share_links", {
-  id: uuid("id").defaultRandom().primaryKey(),
-  documentId: uuid("document_id").references(() => documents.id, { onDelete: "cascade" }),
-  token: text("token").unique().notNull(),
-  role: text("role").notNull(),
-  createdBy: text("created_by").notNull(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }),
-  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow(),
 });
 
 export const documentActivity = pgTable("document_activity", {

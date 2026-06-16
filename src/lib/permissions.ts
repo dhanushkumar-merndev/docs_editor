@@ -1,10 +1,10 @@
 import type { MemberRole } from "@/lib/types";
 
-export type Capability = "read" | "edit" | "rename" | "share" | "uploadImage" | "delete" | "transferOwnership";
+export type Capability = "read" | "edit" | "rename" | "share" | "delete" | "transferOwnership";
 
 const roleCapabilities: Record<MemberRole, Set<Capability>> = {
-  owner: new Set(["read", "edit", "rename", "share", "uploadImage", "delete", "transferOwnership"]),
-  editor: new Set(["read", "edit", "uploadImage"]),
+  owner: new Set(["read", "edit", "rename", "share", "delete", "transferOwnership"]),
+  editor: new Set(["read", "edit"]),
   viewer: new Set(["read"]),
 };
 

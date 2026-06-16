@@ -6,9 +6,13 @@ if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL is required");
 }
 
-const connectionString = process.env.DATABASE_URL;
-
-const client = postgres(connectionString, {
+const url = new URL(process.env.DATABASE_URL);
+const client = postgres({
+  host: url.hostname,
+  port: Number(url.port),
+  database: url.pathname.slice(1),
+  username: decodeURIComponent(url.username),
+  password: decodeURIComponent(url.password),
   max: 3,
   idle_timeout: 30,
   prepare: false,

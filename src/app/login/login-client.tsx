@@ -58,8 +58,7 @@ export function LoginClient() {
           <h2 className="text-2xl font-semibold text-zinc-950 dark:text-zinc-50">Sign in</h2>
           <p className="mt-2 text-sm text-zinc-950 dark:text-zinc-300">Use your Google account to continue.</p>
           <Button className="mt-8 justify-center px-3 py-5" onClick={signInWithGoogle} disabled={pending}>
-            {pending ? <Loader2 className="size-5 animate-spin" /> : <GoogleIcon className="size-5" />}
-            Continue with Google
+            {pending ? <Loader2 className="size-5 animate-spin" /> : <><GoogleIcon className="size-5" />Continue with Google</>}
           </Button>
           <p className="mt-6 text-balance text-center text-xs text-muted-foreground">
             By continuing, you agree to our{" "}

@@ -12,14 +12,12 @@ describe("document permission rules", () => {
   it("allows editor to edit but not share", () => {
     expect(can("editor", "read")).toBe(true);
     expect(can("editor", "edit")).toBe(true);
-    expect(can("editor", "uploadImage")).toBe(true);
     expect(can("editor", "share")).toBe(false);
   });
 
   it("allows viewer to read only", () => {
     expect(can("viewer", "read")).toBe(true);
     expect(can("viewer", "edit")).toBe(false);
-    expect(can("viewer", "uploadImage")).toBe(false);
   });
 
   it("blocks non-members", () => {
