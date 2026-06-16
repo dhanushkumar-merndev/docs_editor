@@ -156,9 +156,17 @@ export async function getDocumentForUser(documentId: string, actor: CurrentUser)
   };
 }
 
-export async function saveDocumentContent(documentId: string, actor: CurrentUser, content: TiptapDoc | MarkdownDoc) {
+export async function saveDocumentContent(documentId: string, actor: CurrentUser, content: TiptapDoc | MarkdownDoc, expectedUpdatedAt?: string) {
   const doc = await getDocumentForUser(documentId, actor);
   if (!doc || !can(doc.role, "edit")) return { ok: false, error: "No edit access" };
+  if (expectedUpdatedAt && Date.parse(doc.updatedAt) !== Date.parse(expectedUpdatedAt)) {
+    return {
+      ok: false,
+      conflict: true,
+      error: "This document changed in another session. Review the latest version before saving.",
+      currentUpdatedAt: doc.updatedAt,
+    };
+  }
   const updatedAt = new Date();
   await db.update(documents).set({ content, updatedAt }).where(eq(documents.id, documentId));
   await logActivity("document.saved", documentId, actor);

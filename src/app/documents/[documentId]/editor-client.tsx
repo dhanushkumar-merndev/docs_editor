@@ -126,9 +126,12 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
         const response = await fetch(`/api/documents/${doc.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          body: JSON.stringify({ action: "save", content }),
+          body: JSON.stringify({ action: "save", content, expectedUpdatedAt: updatedAtRef.current }),
         });
-        const data = (await response.json()) as { error?: string; updatedAt?: string };
+        const data = (await response.json()) as { error?: string; updatedAt?: string; conflict?: boolean };
+        if (response.status === 409 || data.conflict) {
+          throw new Error(data.error ?? "This document changed in another session. Review the latest version before saving.");
+        }
         if (!response.ok) throw new Error(data.error ?? "Save failed");
         const nextUpdatedAt = data.updatedAt ?? new Date().toISOString();
         updatedAtRef.current = nextUpdatedAt;

@@ -32,6 +32,7 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
     pageCount?: number;
     email?: string;
     role?: string;
+    expectedUpdatedAt?: string;
   };
 
   if (body.action === "save") {
@@ -41,8 +42,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
       ? markdownContentSchema.safeParse(body.content)
       : tiptapDocSchema.safeParse(body.content);
     if (!parsed.success) return NextResponse.json({ error: "Invalid document content" }, { status: 400 });
-    const result = await saveDocumentContent(documentId, actor, parsed.data as TiptapDoc | MarkdownDoc);
-    return NextResponse.json(result, { status: result.ok ? 200 : 403 });
+    const result = await saveDocumentContent(documentId, actor, parsed.data as TiptapDoc | MarkdownDoc, body.expectedUpdatedAt);
+    const status = result.ok ? 200 : "conflict" in result && result.conflict ? 409 : 403;
+    return NextResponse.json(result, { status });
   }
 
   if (body.action === "rename") {
