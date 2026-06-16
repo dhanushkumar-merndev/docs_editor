@@ -134,7 +134,7 @@ export function ShareDialog({
                             }
                           }}
                         >
-                          <Avatar name={user.name} />
+                          <Avatar name={user.name} src={user.image ?? undefined} />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm font-medium">{user.name}</p>
                             <p className="truncate text-xs text-muted-foreground">{user.email}</p>
@@ -170,7 +170,7 @@ export function ShareDialog({
           <div className="max-h-[168px] overflow-y-auto divide-y divide-zinc-200 rounded-md border border-zinc-200 dark:divide-zinc-800 dark:border-zinc-800">
             {doc.members.map((member) => (
               <div key={member.userId} className="flex items-center gap-3 p-3">
-                <Avatar name={member.name} />
+                <Avatar name={member.name} src={member.image ?? undefined} />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-sm font-medium">{member.name}</p>
                   <p className="truncate text-xs text-zinc-500">{member.email}</p>
