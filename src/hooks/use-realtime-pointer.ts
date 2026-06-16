@@ -40,7 +40,7 @@ export type RemoteDocumentDraft = {
 };
 
 const THROTTLE_MS = 100;
-const CONTENT_THROTTLE_MS = 350;
+const CONTENT_THROTTLE_MS = 80;
 const STALE_MS = 5000;
 
 export function useRealtimePointer(documentId: string, userId: string, userName: string) {

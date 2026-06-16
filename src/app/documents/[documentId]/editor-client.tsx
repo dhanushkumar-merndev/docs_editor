@@ -128,8 +128,11 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ action: "save", content, expectedUpdatedAt: updatedAtRef.current }),
         });
-        const data = (await response.json()) as { error?: string; updatedAt?: string; conflict?: boolean };
+        const data = (await response.json()) as { error?: string; updatedAt?: string; conflict?: boolean; currentUpdatedAt?: string };
         if (response.status === 409 || data.conflict) {
+          if (data.currentUpdatedAt) {
+            updatedAtRef.current = data.currentUpdatedAt;
+          }
           throw new Error(data.error ?? "This document changed in another session. Review the latest version before saving.");
         }
         if (!response.ok) throw new Error(data.error ?? "Save failed");
@@ -319,7 +322,6 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
             <div
               ref={editorCanvasRef}
               className={`relative flex w-full flex-col rounded-lg bg-white p-8 shadow-sm dark:bg-zinc-900 md:p-12 ${previewOpen ? "" : "min-h-[calc(100dvh-150px)]"}`}
-              onPointerMove={(event) => sendPointerFromEvent(event)}
               onPointerDown={(event) => sendPointerFromEvent(event, true)}
             >
               <textarea
