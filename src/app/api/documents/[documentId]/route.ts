@@ -57,8 +57,9 @@ export async function PATCH(request: Request, context: { params: Promise<{ docum
   }
 
   if (body.action === "pageCount") {
-    if (!Number.isInteger(body.pageCount) || body.pageCount < 1 || body.pageCount > 20) return NextResponse.json({ error: "Invalid page count" }, { status: 400 });
-    const result = await updatePageCountForUser(documentId, actor, body.pageCount);
+    const { pageCount } = body;
+    if (typeof pageCount !== "number" || !Number.isInteger(pageCount) || pageCount < 1 || pageCount > 20) return NextResponse.json({ error: "Invalid page count" }, { status: 400 });
+    const result = await updatePageCountForUser(documentId, actor, pageCount);
     return NextResponse.json(result, { status: result.ok ? 200 : 403 });
   }
 

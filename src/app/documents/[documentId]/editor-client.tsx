@@ -11,8 +11,9 @@ import StarterKit from "@tiptap/starter-kit";
 import {
   ArrowLeft,
   Bold,
-  ChevronDown,
   Check,
+  ChevronDown,
+  ChevronsUpDown,
   Download,
   Heading1,
   Heading2,
@@ -25,6 +26,7 @@ import {
   Share2,
   Trash2,
   UnderlineIcon,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -32,7 +34,16 @@ import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import {
+  Command,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import { Input } from "@/components/ui/input";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { imageSizeLimitLabel, MAX_IMAGES_PER_DOCUMENT, MAX_IMAGE_SIZE_BYTES } from "@/lib/limits";
 import { can, getRoleLabel } from "@/lib/permissions";
@@ -495,25 +506,59 @@ function SaveStateBadge({ state, updatedAt }: { state: SaveState; updatedAt: str
 }
 
 function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; onClose: () => void; onDocumentChange: (doc: EditorDocument) => void }) {
-  const [email, setEmail] = useState("");
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [selected, setSelected] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [results, setResults] = useState<{ id: string; name: string; email: string; image: string | null }[]>([]);
+  const [loading, setLoading] = useState(false);
   const [role, setRole] = useState<Exclude<MemberRole, "owner">>("viewer");
   const [link, setLink] = useState("");
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (search.length < 2) {
+      setResults([]);
+      return;
+    }
+    setLoading(true);
+    debounceRef.current = setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/users/search?q=${encodeURIComponent(search)}`);
+        if (response.ok) {
+          const data = (await response.json()) as { users: { id: string; name: string; email: string; image: string | null }[] };
+          setResults(data.users);
+        } else {
+          const data = (await response.json()) as { error?: string };
+          if (response.status !== 429) setResults([]);
+          if (response.status === 429) toast.error(data.error ?? "Too many requests");
+        }
+      } catch {
+        setResults([]);
+      } finally {
+        setLoading(false);
+      }
+    }, 300);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [search]);
 
   function handleShare() {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      toast.error("Enter a valid email");
+    if (!selected) {
+      toast.error("Select a registered user from the list");
       return;
     }
     fetch(`/api/documents/${doc.id}`, {
       method: "PATCH",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ action: "shareEmail", email, role }),
+      body: JSON.stringify({ action: "shareEmail", email: selected.email, role }),
     })
       .then(async (response) => {
         const data = (await response.json()) as { error?: string };
         if (!response.ok) throw new Error(data.error ?? "Share failed");
         toast.success("Document shared");
-        setEmail("");
+        setSelected(null);
+        setSearch("");
+        setOpen(false);
         const fresh = await fetch(`/api/documents/${doc.id}`);
         const freshData = (await fresh.json()) as { document?: EditorDocument };
         if (freshData.document) onDocumentChange(freshData.document);
@@ -538,20 +583,70 @@ function ShareDialog({ doc, onClose, onDocumentChange }: { doc: EditorDocument; 
       .catch((error: Error) => toast.error(error.message));
   }
 
+  const alreadyMembers = new Set(doc.members.map((m) => m.userId));
+
   return (
     <div className="fixed inset-0 z-50 grid place-items-center bg-black/50 p-4">
       <div className="w-full max-w-xl rounded-lg border border-zinc-200 bg-white p-5 shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
         <div className="flex items-center justify-between">
           <h2 className="text-lg font-semibold">Share document</h2>
-          <Button variant="ghost" onClick={onClose}>Close</Button>
+          <Button variant="ghost" size="icon" onClick={onClose} className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30">
+            <X className="size-4" />
+          </Button>
         </div>
         <div className="mt-4 grid gap-3 md:grid-cols-[1fr_130px_auto]">
-          <Input value={email} onChange={(event) => setEmail(event.target.value)} placeholder="User email" />
+          <Popover open={open} onOpenChange={setOpen}>
+            <PopoverTrigger asChild>
+              <Button variant="outline" role="combobox" aria-expanded={open} className="justify-between">
+                {selected ? (
+                  <span className="truncate">{selected.name} ({selected.email})</span>
+                ) : (
+                  <span className="text-muted-foreground">Search registered users...</span>
+                )}
+                <ChevronsUpDown className="ml-2 size-4 shrink-0 opacity-50" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-[var(--radix-popover-trigger-width)] p-0" align="start">
+              <Command>
+                <CommandInput placeholder="Type name or email..." value={search} onValueChange={setSearch} />
+                <CommandList>
+                  <CommandEmpty>{loading ? "Searching..." : "No registered user found"}</CommandEmpty>
+                  <CommandGroup>
+                    {results.map((user) => (
+                      <CommandItem
+                        key={user.id}
+                        value={user.email}
+                        disabled={alreadyMembers.has(user.id)}
+                        onSelect={(currentValue) => {
+                          const found = results.find((u) => u.email === currentValue);
+                          if (found) {
+                            setSelected(found);
+                            setOpen(false);
+                          }
+                        }}
+                      >
+                        <Avatar name={user.name} />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-sm font-medium">{user.name}</p>
+                          <p className="truncate text-xs text-muted-foreground">{user.email}</p>
+                        </div>
+                        {alreadyMembers.has(user.id) ? (
+                          <span className="text-xs text-muted-foreground">Already member</span>
+                        ) : selected?.id === user.id ? (
+                          <Check className="size-4" />
+                        ) : null}
+                      </CommandItem>
+                    ))}
+                  </CommandGroup>
+                </CommandList>
+              </Command>
+            </PopoverContent>
+          </Popover>
           <select className="h-10 rounded-md border border-zinc-200 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-zinc-400 focus:ring-2 focus:ring-zinc-200 dark:border-zinc-800 dark:bg-zinc-950 dark:focus:ring-zinc-800" value={role} onChange={(event) => setRole(event.target.value as Exclude<MemberRole, "owner">)}>
             <option value="viewer">Viewer</option>
             <option value="editor">Editor</option>
           </select>
-          <Button onClick={handleShare}>Invite</Button>
+          <Button onClick={handleShare} disabled={!selected}>Invite</Button>
         </div>
         <div className="mt-3 flex gap-2">
           <Button variant="outline" onClick={handleLink}>
