@@ -3,7 +3,7 @@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Avatar } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { getColor } from "@/hooks/use-realtime-pointer";
+import { getCollabColor } from "@/lib/collab-colors";
 import { getRoleLabel } from "@/lib/permissions";
 import type { DocumentMember } from "@/lib/types";
 
@@ -46,7 +46,7 @@ export function MembersStack({ members, activeUserIds }: { members: DocumentMemb
                 ) : (
                   <span
                     className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-white dark:border-zinc-950"
-                    style={{ backgroundColor: getColor(member.userId) }}
+                    style={{ backgroundColor: getCollabColor(member.userId) }}
                   />
                 )}
               </div>

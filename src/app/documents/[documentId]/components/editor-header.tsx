@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, Download, Eye, Share2 } from "lucide-react";
+import { ArrowLeft, Download, Share2 } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { Avatar } from "@/components/ui/avatar";
@@ -25,11 +25,9 @@ export function EditorHeader({
   activeUserIds,
   doc,
   exportMarkdown,
-  previewOpen,
   renameDocument,
   role,
   saveState,
-  setPreviewOpen,
   setShareOpen,
   setTitleDraft,
   titleDraft,
@@ -38,11 +36,9 @@ export function EditorHeader({
   activeUserIds: Set<string>;
   doc: EditorDocument;
   exportMarkdown: () => void;
-  previewOpen: boolean;
   renameDocument: () => void;
   role: EditorDocument["role"];
   saveState: SaveState;
-  setPreviewOpen: (open: boolean) => void;
   setShareOpen: (open: boolean) => void;
   setTitleDraft: (title: string) => void;
   titleDraft: string;
@@ -81,10 +77,6 @@ export function EditorHeader({
             <Button variant="outline" onClick={exportMarkdown}>
               <Download className="size-4" />
               Export
-            </Button>
-            <Button variant={previewOpen ? "secondary" : "outline"} onClick={() => setPreviewOpen(!previewOpen)}>
-              <Eye className="size-4" />
-              Preview
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

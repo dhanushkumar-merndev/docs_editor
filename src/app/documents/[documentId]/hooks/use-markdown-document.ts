@@ -1,28 +1,44 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { RefObject } from "react";
 import { toast } from "sonner";
+import * as Y from "yjs";
+import type { Awareness } from "y-protocols/awareness";
 import { can } from "@/lib/permissions";
+import { getCollabColor } from "@/lib/collab-colors";
+import { YjsSupabaseProvider } from "@/lib/y-supabase-provider";
+import { bindYTextToTextarea } from "@/lib/y-textarea";
 import type { AjaiaDocument, MarkdownDoc } from "@/lib/types";
-import type { RemoteDocumentDraft } from "@/hooks/use-realtime-pointer";
+import type { CurrentUser } from "@/lib/session";
 import type { EditorDocument, SaveState } from "../components/editor-types";
 
-// Owns Markdown document state, autosave, polling, rename, export, and conflict protection.
-export function useMarkdownDocument(initialDocument: EditorDocument | null, remoteDraft: RemoteDocumentDraft | null) {
+// Owns the Yjs-backed Markdown document state, autosave, rename, export, and awareness lifecycle.
+export function useMarkdownDocument(
+  initialDocument: EditorDocument | null,
+  user: CurrentUser,
+  textareaRef: RefObject<HTMLTextAreaElement | null>,
+) {
   const [doc, setDoc] = useState<EditorDocument | null>(initialDocument);
   const [saveState, setSaveState] = useState<SaveState>("saved");
   const [titleDraft, setTitleDraft] = useState("");
-  const saveStateRef = useRef<SaveState>("saved");
-  const updatedAtRef = useRef(initialDocument?.updatedAt ?? "");
+  const [markdownText, setMarkdownText] = useState("");
+  const [awareness, setAwareness] = useState<Awareness | null>(null);
+  const [activeUserIds, setActiveUserIds] = useState<Set<string>>(new Set([user.id]));
+  const ydocRef = useRef<Y.Doc | null>(null);
+  const ytextRef = useRef<Y.Text | null>(null);
+  const providerRef = useRef<YjsSupabaseProvider | null>(null);
+  const unbindTextareaRef = useRef<(() => void) | null>(null);
 
-  const contentObj = doc?.content;
-  const initialMarkdown =
-    contentObj && "format" in contentObj && contentObj.format === "markdown"
-      ? (contentObj as MarkdownDoc).text
-      : "";
-  const [markdownText, setMarkdownText] = useState(initialMarkdown);
   const role = doc?.role ?? null;
   const editable = can(role, "edit");
+
+  const initialMarkdown = useMemo(() => {
+    const contentObj = initialDocument?.content;
+    return contentObj && "format" in contentObj && contentObj.format === "markdown"
+      ? (contentObj as MarkdownDoc).text
+      : "";
+  }, [initialDocument]);
 
   useEffect(() => {
     const id = window.setTimeout(() => setTitleDraft(doc?.title ?? ""), 0);
@@ -30,22 +46,55 @@ export function useMarkdownDocument(initialDocument: EditorDocument | null, remo
   }, [doc?.title]);
 
   useEffect(() => {
-    saveStateRef.current = saveState;
-  }, [saveState]);
+    if (!initialDocument) return;
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText("content");
+    Y.applyUpdate(ydoc, createInitialMarkdownUpdate(initialMarkdown), "initial-markdown");
+    const provider = new YjsSupabaseProvider(initialDocument.id, ydoc, {
+      userId: user.id,
+      name: user.name,
+      color: getCollabColor(user.id),
+    });
+
+    ydocRef.current = ydoc;
+    ytextRef.current = ytext;
+    providerRef.current = provider;
+
+    const updateMarkdownText = () => setMarkdownText(ytext.toString());
+    ytext.observe(updateMarkdownText);
+
+    const updateActiveUsers = () => {
+      const states = Array.from(provider.awareness.getStates().values()) as { user?: { userId?: string } }[];
+      setActiveUserIds(new Set(states.map((state) => state.user?.userId).filter((id): id is string => Boolean(id))));
+    };
+    provider.awareness.on("change", updateActiveUsers);
+    const initialStateTimer = window.setTimeout(() => {
+      setAwareness(provider.awareness);
+      setMarkdownText(ytext.toString());
+      updateActiveUsers();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(initialStateTimer);
+      unbindTextareaRef.current?.();
+      unbindTextareaRef.current = null;
+      ytext.unobserve(updateMarkdownText);
+      provider.awareness.off("change", updateActiveUsers);
+      provider.destroy();
+      ydoc.destroy();
+      ydocRef.current = null;
+      ytextRef.current = null;
+      providerRef.current = null;
+      setAwareness(null);
+    };
+  }, [initialDocument, initialMarkdown, user.id, user.name]);
 
   useEffect(() => {
-    if (doc?.updatedAt) updatedAtRef.current = doc.updatedAt;
-  }, [doc?.updatedAt]);
-
-  useEffect(() => {
-    if (!remoteDraft || remoteDraft.text === markdownText) return;
-    // Do not apply remote drafts over a local unsaved edit; that would overwrite the user's work.
-    if (editable && saveStateRef.current !== "saved") return;
-    const content = { format: "markdown" as const, text: remoteDraft.text } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
-    setMarkdownText(remoteDraft.text);
-    setDoc((current) => (current ? { ...current, content } : current));
-    setSaveState("saved");
-  }, [editable, markdownText, remoteDraft]);
+    const textarea = textareaRef.current;
+    const ytext = ytextRef.current;
+    if (!textarea || !ytext || unbindTextareaRef.current) return;
+    unbindTextareaRef.current = bindYTextToTextarea(ytext, textarea);
+  });
 
   const saveContent = useCallback(
     async (silent = false) => {
@@ -54,29 +103,24 @@ export function useMarkdownDocument(initialDocument: EditorDocument | null, remo
         toast.error("You only have view access");
         return;
       }
-      const content = { format: "markdown" as const, text: markdownText } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
+      const text = ytextRef.current?.toString() ?? markdownText;
+      const content = { format: "markdown" as const, text } satisfies MarkdownDoc as unknown as AjaiaDocument["content"];
       setSaveState("saving");
       try {
         const response = await fetch(`/api/documents/${doc.id}`, {
           method: "PATCH",
           headers: { "content-type": "application/json" },
-          // expectedUpdatedAt prevents silent overwrites when two users save from different document versions.
-          body: JSON.stringify({ action: "save", content, expectedUpdatedAt: updatedAtRef.current }),
+          body: JSON.stringify({ action: "save", content }),
         });
-        const data = (await response.json()) as { error?: string; updatedAt?: string; conflict?: boolean; currentUpdatedAt?: string };
-        if (response.status === 409 || data.conflict) {
-          if (data.currentUpdatedAt) updatedAtRef.current = data.currentUpdatedAt;
-          throw new Error(data.error ?? "This document changed in another session. Review the latest version before saving.");
-        }
+        const data = (await response.json()) as { error?: string; updatedAt?: string };
         if (!response.ok) throw new Error(data.error ?? "Save failed");
         const nextUpdatedAt = data.updatedAt ?? new Date().toISOString();
-        updatedAtRef.current = nextUpdatedAt;
         setDoc((current) => (current ? { ...current, content, updatedAt: nextUpdatedAt } : current));
         setSaveState("saved");
         if (!silent) toast.success("Document saved");
       } catch (error) {
         setSaveState("error");
-        toast.error(error instanceof Error ? error.message : "Save failed");
+        if (!silent) toast.error(error instanceof Error ? error.message : "Save failed");
       }
     },
     [doc, role, markdownText],
@@ -87,29 +131,6 @@ export function useMarkdownDocument(initialDocument: EditorDocument | null, remo
     const id = window.setTimeout(() => void saveContent(true), 1200);
     return () => window.clearTimeout(id);
   }, [editable, saveContent, saveState]);
-
-  useEffect(() => {
-    if (!doc) return;
-    const id = window.setInterval(() => {
-      if (saveStateRef.current !== "saved") return;
-      fetch(`/api/documents/${doc.id}`)
-        .then(async (response) => {
-          const data = (await response.json()) as { document?: EditorDocument };
-          if (!response.ok || !data.document) return;
-          if (Date.parse(data.document.updatedAt) <= Date.parse(updatedAtRef.current)) return;
-          const contentObj = data.document.content;
-          const remoteText = contentObj && "format" in contentObj && contentObj.format === "markdown"
-            ? (contentObj as MarkdownDoc).text
-            : "";
-          setMarkdownText(remoteText);
-          updatedAtRef.current = data.document.updatedAt;
-          setDoc(data.document);
-          setSaveState("saved");
-        })
-        .catch(() => {});
-    }, 5000);
-    return () => window.clearInterval(id);
-  }, [doc]);
 
   function renameDocument() {
     if (!doc) return;
@@ -144,7 +165,7 @@ export function useMarkdownDocument(initialDocument: EditorDocument | null, remo
 
   function exportMarkdown() {
     if (!doc) return;
-    const blob = new Blob([markdownText || `# ${doc.title}\n`], { type: "text/markdown;charset=utf-8" });
+    const blob = new Blob([ytextRef.current?.toString() || `# ${doc.title}\n`], { type: "text/markdown;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const anchor = document.createElement("a");
     anchor.href = url;
@@ -153,18 +174,35 @@ export function useMarkdownDocument(initialDocument: EditorDocument | null, remo
     URL.revokeObjectURL(url);
   }
 
+  function setAwarenessCursor(cursor: { x: number; y: number }) {
+    providerRef.current?.awareness.setLocalStateField("cursor", cursor);
+  }
+
   return {
+    activeUserIds,
+    awareness,
     doc,
     editable,
     exportMarkdown,
     markdownText,
     renameDocument,
     role,
+    saveContent,
     saveState,
+    setAwarenessCursor,
     setDoc,
-    setMarkdownText,
     setSaveState,
     setTitleDraft,
     titleDraft,
   };
+}
+
+function createInitialMarkdownUpdate(text: string) {
+  const seedDoc = new Y.Doc();
+  // A deterministic client id makes the DB snapshot idempotent across browser tabs.
+  (seedDoc as Y.Doc & { clientID: number }).clientID = 1;
+  seedDoc.getText("content").insert(0, text);
+  const update = Y.encodeStateAsUpdate(seedDoc);
+  seedDoc.destroy();
+  return update;
 }

@@ -3,32 +3,23 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
-import { useRealtimePointer } from "@/hooks/use-realtime-pointer";
 import { EditorCanvas } from "./components/editor-canvas";
 import { EditorHeader } from "./components/editor-header";
-import { MarkdownPreview } from "./components/markdown-preview";
 import { ShareDialog } from "./components/share-dialog";
 import { pageWidthClass } from "./components/editor-types";
-import { useCaretBroadcast } from "./hooks/use-caret-broadcast";
-import { useAutoResizeTextarea } from "./hooks/use-auto-resize-textarea";
 import { useMarkdownDocument } from "./hooks/use-markdown-document";
 import type { CurrentUser } from "@/lib/session";
 import type { EditorDocument } from "./components/editor-types";
 
-// Coordinates the document editor page by wiring document state, realtime presence, and reusable editor UI.
+// Coordinates the document editor page by wiring Yjs document state, awareness, and route-local editor UI.
 export function EditorClient({ initialDocument, user }: { initialDocument: EditorDocument | null; user: CurrentUser }) {
   const [shareOpen, setShareOpen] = useState(false);
-  const [previewOpen, setPreviewOpen] = useState(false);
   const editorCanvasRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const { activeUserIds, remoteDraft, remotePointers, trackPointer, trackEditing, broadcastDocumentDraft } = useRealtimePointer(
-    initialDocument?.id ?? "",
-    user.id,
-    user.name,
-  );
-
   const {
+    activeUserIds,
+    awareness,
     doc,
     editable,
     exportMarkdown,
@@ -36,22 +27,12 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
     renameDocument,
     role,
     saveState,
+    setAwarenessCursor,
     setDoc,
-    setMarkdownText,
     setSaveState,
     setTitleDraft,
     titleDraft,
-  } = useMarkdownDocument(initialDocument, remoteDraft);
-
-  const livePointersEnabled = Boolean(doc?.members && doc.members.length > 1);
-  const sendCaretPosition = useCaretBroadcast({
-    canvasRef: editorCanvasRef,
-    enabled: livePointersEnabled,
-    textareaRef,
-    trackPointer,
-  });
-
-  useAutoResizeTextarea(textareaRef, markdownText, previewOpen, doc?.pageSize);
+  } = useMarkdownDocument(initialDocument, user, textareaRef);
 
   if (!doc || !role) {
     return (
@@ -73,11 +54,9 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
         activeUserIds={activeUserIds}
         doc={doc}
         exportMarkdown={exportMarkdown}
-        previewOpen={previewOpen}
         renameDocument={renameDocument}
         role={role}
         saveState={saveState}
-        setPreviewOpen={setPreviewOpen}
         setShareOpen={setShareOpen}
         setTitleDraft={setTitleDraft}
         titleDraft={titleDraft}
@@ -85,23 +64,17 @@ export function EditorClient({ initialDocument, user }: { initialDocument: Edito
       />
 
       <section className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 py-8 lg:px-8">
-        <div className={`mx-auto flex w-full items-start gap-6 transition-all duration-300 ${previewOpen ? "max-w-[1680px]" : `justify-center ${pageWidthClass[doc.pageSize]}`}`}>
+        <div className={`mx-auto flex w-full items-start justify-center transition-all duration-300 ${pageWidthClass[doc.pageSize]}`}>
           <EditorCanvas
+            awareness={awareness}
             canvasRef={editorCanvasRef}
             editable={editable}
+            localUserId={user.id}
             markdownText={markdownText}
-            onBroadcastDraft={broadcastDocumentDraft}
-            onCaretMove={sendCaretPosition}
-            onEditStateChange={trackEditing}
-            onMarkdownChange={(nextText) => {
-              setMarkdownText(nextText);
-              setSaveState("dirty");
-            }}
-            previewOpen={previewOpen}
-            remotePointers={remotePointers}
+            onCaretMove={setAwarenessCursor}
+            onDirty={() => setSaveState("dirty")}
             textareaRef={textareaRef}
           />
-          {previewOpen ? <MarkdownPreview markdownText={markdownText} /> : null}
         </div>
       </section>
 

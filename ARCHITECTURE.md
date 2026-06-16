@@ -18,11 +18,11 @@ Supabase Storage bucket `document-assets` is configured but the image upload UI 
 
 ## Editor
 
-The editor uses a `<textarea>` for raw Markdown source input and `marked` for live rendered HTML preview. This approach was chosen over Tiptap WYSIWYG because Markdown is simpler to implement, export comes for free, and the preview gives immediate visual feedback. The tradeoff is no toolbar-based formatting — users type Markdown syntax directly.
+The editor uses a `<textarea>` for raw Markdown source input bound to a Yjs `Y.Text`. This keeps the MVP lightweight while adding CRDT conflict resolution. The tradeoff is no toolbar-based formatting — users type Markdown syntax directly.
 
 ## Sync
 
-Document sync uses polling (5-second interval) to fetch remote changes. True realtime collaboration via Supabase Realtime Broadcast was added for live pointer awareness (cursor position broadcasting with mouse movement). Polling was chosen for content sync because it requires no WebSocket infrastructure and is sufficient for MVP sharing scenarios.
+Document sync uses Yjs CRDT updates transported over Supabase Realtime Broadcast. Yjs Awareness powers active member state and remote caret labels. Manual/autosave persists the merged Markdown snapshot back to Supabase Postgres.
 
 ## Sharing
 
@@ -30,7 +30,6 @@ Sharing is email-only via registered user search. Owner, Editor, and Viewer role
 
 ## What Was Deprioritized
 
-- Full CRDT collaborative editing — intentionally deferred. The product prioritizes core lifecycle reliability: create, edit, save, reopen, share.
 - Print-grade pagination — the editor is a single continuous canvas with page width simulation (A4/Letter/Custom).
 - Image upload — Supabase Storage is configured but the upload dialog was cut.
 - Rate limiting — Upstash Redis is connected but not wired into endpoints.

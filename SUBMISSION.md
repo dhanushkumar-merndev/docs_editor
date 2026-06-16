@@ -29,7 +29,7 @@ https://drive.google.com/drive/folders/19kpItCTwPNY0vr60UuzqNUxoPDOdv93d?usp=sha
 - Document stats cards (total, owned, shared counts)
 - Create document → opens Markdown editor
 - Rename document (owner-only, inline input)
-- Markdown textarea editor with live rendered HTML preview
+- Markdown textarea editor with Yjs CRDT realtime sync
 - Save (manual + autosave 1.2s debounce)
 - Reopen — content preserved after refresh
 - File import: `.md` files (raw Markdown) and `.txt` files (paragraphs)
@@ -42,21 +42,19 @@ https://drive.google.com/drive/folders/19kpItCTwPNY0vr60UuzqNUxoPDOdv93d?usp=sha
 - Light/dark theme with flash prevention
 - Debounced search (client-side filter)
 - User profile editing (display name, time format, timezone)
-- Live Markdown draft updates over Supabase Realtime Broadcast with ~80ms throttling
-- Click-based blinking collaborator caret via Supabase Realtime Broadcast
-- Optimistic save conflict guard prevents silent overwrites when two users edit at once
+- Yjs CRDT content updates over Supabase Realtime Broadcast
+- Yjs Awareness active users and blinking collaborator carets
 - Member avatar stack with active-user green dots
 - Activity logging to `document_activity` table
 - Zod validation on all inputs
-- Poll-based sync (5s) as persistence fallback for shared document changes
+- Manual/autosave persistence of merged Yjs Markdown snapshots
 - A4/Letter/Custom page width selector
 - Route-scoped component chunks for documents, dashboard, and login
 - Vitest permission test
 
 ## What Is Partial
 
-- The editor uses raw Markdown source (textarea) with rendered preview — not a Tiptap WYSIWYG toolbar. Users type Markdown syntax directly.
-- Concurrent editing is not CRDT/OT. Live drafts stream to idle viewers/editors, while local unsaved work is protected from being overwritten. The app blocks stale saves with a conflict message instead of silently merging two users' edits.
+- The editor uses raw Markdown source (textarea) with Yjs CRDT sync — not a Tiptap WYSIWYG toolbar. Users type Markdown syntax directly.
 - Image upload UI is not implemented (Supabase Storage bucket exists, validation schema ready)
 - Transfer ownership is not implemented in the UI
 - Public share links were intentionally removed in favor of email-only direct adds
@@ -87,18 +85,17 @@ Better Auth with Google OAuth. Session cookie is HttpOnly, checked server-side o
 Supabase Postgres + Drizzle ORM. JSONB `content` column supports two formats: `MarkdownDoc` (current, `{format: "markdown", text: "..."}`) and `TiptapDoc` (legacy, `{type: "doc", ...}`).
 
 ### Editor
-Raw Markdown `<textarea>` + `marked` for live HTML preview. Chosen over Tiptap WYSIWYG because Markdown is simpler, export is free, and the preview pane gives instant visual feedback. Tradeoff: no toolbar formatting buttons — users type Markdown syntax.
+Raw Markdown `<textarea>` bound to Yjs `Y.Text`. Chosen over Tiptap WYSIWYG because Markdown is simpler, export is free, and Yjs adds realtime conflict-free text merging without rebuilding the editor surface. Tradeoff: no toolbar formatting buttons — users type Markdown syntax.
 
-The editor was refactored into focused route-scoped components and hooks. Document-specific UI lives beside the document route in `src/app/documents/[documentId]/components`, document behavior hooks live in `src/app/documents/[documentId]/hooks`, dashboard-only chunks live in `src/app/dashboard/components`, and the login form lives in `src/app/login/components`. Each touched file includes a short purpose comment, with deeper comments around realtime draft protection, stale-save conflict handling, and exact textarea caret measurement.
+The editor was refactored into focused route-scoped components and hooks. Document-specific UI lives beside the document route in `src/app/documents/[documentId]/components`, document behavior hooks live in `src/app/documents/[documentId]/hooks`, dashboard-only chunks live in `src/app/dashboard/components`, and the login form lives in `src/app/login/components`. Each touched file includes a short purpose comment, with deeper comments around Yjs snapshot seeding, CRDT textarea binding, and exact textarea caret measurement.
 
 ### Sync
-Content sync uses lightweight Supabase Realtime Broadcast for live Markdown draft updates with ~80ms throttling and a 5-second polling fallback for persisted changes. The collaborator marker is a click-based blinking caret, not a mouse-follow pointer. Saves include the last known document timestamp; if another session saved first, the server returns a conflict instead of overwriting. This is safer than last-write-wins for the MVP, but it is not full CRDT/OT merging.
+Content sync uses Yjs CRDT updates over Supabase Realtime Broadcast. Yjs Awareness tracks active collaborators and remote caret labels. Saves persist the current merged Markdown snapshot to Supabase Postgres, so the old stale-save conflict guard is no longer used.
 
 ### Sharing
 Email-only via registered user search. Owner/Editor/Viewer roles enforced server-side via `can()` helper. Max 10 users per document. No public/editor links.
 
 ### What Was Deprioritized
-- Full CRDT realtime editing — out of scope
 - Print-grade pagination — single canvas with A4/Letter/Custom width
 - Image upload — Storage configured, UI cut
 - Rate limiting — Upstash Redis not wired
@@ -115,10 +112,10 @@ Email-only via registered user search. Owner/Editor/Viewer roles enforced server
 - Scaffolded App Router routes, Drizzle schema, and Zod validation
 - Built the permission system and Vitest test
 - Identified edge cases (member limits, rate limiting, file type validation)
-- Refined the Markdown editor, preview split layout, collaborator presence/caret behavior, and submission documentation
+- Refined the Markdown editor, route-scoped component structure, Yjs collaboration, collaborator presence/caret behavior, and submission documentation
 
 **What was changed/rejected:**
-- AI initially suggested full CRDT realtime editing — rejected as out of scope
+- AI initially suggested a heavier WYSIWYG collaboration stack — rejected in favor of Yjs on the existing Markdown textarea
 - AI suggested pagination system — simplified to single canvas with page width selector
 - AI suggested `.docx` parsing — rejected, limited to `.txt` and `.md`
 - AI suggested public share links — removed in favor of email-only sharing
